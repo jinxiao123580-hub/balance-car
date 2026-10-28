@@ -1,0 +1,5 @@
+time_s,ms,pitch100,gyro100,target100,balPHz,balDHz,balHz,spdAng100,auth1000,spdDirRawHz,spdDirHz,posSpdTarget1000,mixHz,limitedHz,finalHz,turnHz,speed1000,raw1000,speedAccel1000,predSpeed1000,predDelta1000,spdDirUnclampedHz,pos100,posError100,enc1,enc2,m1Hz,m2Hz,accPitch100,kalmanBias1000,gyroIntegAngle100,balAccelRawHzStep,balAccelLimitedHzStep,integratedSpeedHz,speedError1000,speedP100,speedI100,speedAngleUnclamped100,speedAngleLimited100,balAccelEffectiveLimitHzStep,rawSpeedEncoderMode,dynamicRx1000,accelMagErrX1000,fallStopCount,gyroAbsMax100,accPitchDevMax100,balHzAbsMax,kalmanBiasMin1000,kalmanBiasMax1000,P_balanceKp,D_balanceKd,O_balanceAngleOffset,Z_deadband,L_limitHz,S_maxAccelIncrement,B_highSpeedAccelStartHz,H_highSpeedAccelLimitHz,R_balanceAccelScale,K_speedKp,I_speedKi,N_MAX_SPEED_ANGLE,W_SPEED_INTEGRAL_LIMIT,J_speedErrorDeadband,E_speedKd,X_positionKp,Y_maxPositionReturnSpeed,M_positionDeadband,F_OUTER_FULL_ANGLE,G_OUTER_DISABLE_ANGLE,T_turnKp,U_turnKd
+# --- reconnect new session @ 20:40:19 ---
+# --- reconnect new session @ 20:40:19 ---
+# --- reconnect new session @ 20:40:19 ---
+# --- reconnect new session @ 20:40:19 ---

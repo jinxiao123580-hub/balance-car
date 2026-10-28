@@ -1,0 +1,5594 @@
+#include <Arduino.h>
+
+#include <Wire.h>
+
+#include <SparkFun_BMI270_Arduino_Library.h>
+
+#include <HardwareTimer.h>
+
+#include <math.h>
+
+  
+
+// ============================================================
+
+// STM32F407ZGT6 + BMI270 + DRV8825
+
+// 正式控制版
+
+//
+
+// BMI270：ACC 400Hz + GYRO 400Hz
+
+// 控制循环：固定400Hz
+
+// Kalman：Angle + Gyro Bias
+
+// 新增：基于加速度模长的动态R，降低运动/振动时accPitch权重
+
+// 当前为增强版：小角度速度/位置拉回 + 2.5~4°平滑退外环 + >4°直立PD优先 + 短时0输出保持
+
+// 平衡点：2.9°
+
+// 当前：只开启直立PD
+
+//
+
+// 已开启串级控制：融合速度作为速度PI反馈，速度PI输出目标倾角，直立PD输出STEP频率。
+
+// 转向PD保留结构，当前参数为0。
+
+// OLED完全不参与运行。
+
+// ============================================================
+
+  
+  
+
+// ============================================================
+
+// 固定引脚 —— 不修改
+
+// ============================================================
+
+  
+
+// Motor1
+
+#define MOTOR1_DIR_PIN   PA7
+
+#define MOTOR1_STEP_PIN  PA6      // TIM3_CH1
+
+  
+
+// Motor2
+
+#define MOTOR2_DIR_PIN   PB0
+
+#define MOTOR2_STEP_PIN  PA8      // TIM1_CH1
+
+  
+
+// BMI270
+
+#define BMI_SCL_PIN      PB8
+
+#define BMI_SDA_PIN      PB9
+
+  
+
+// OLED引脚保留定义，但本版完全不用OLED
+
+#define OLED_SDA_PIN     PF7
+
+#define OLED_SCL_PIN     PF9
+
+#define OLED_VCC_PIN     PC0
+
+#define OLED_GND_PIN     PC2
+
+  
+
+// Encoder1
+
+#define ENCODER1_A_PIN   PA0
+
+#define ENCODER1_B_PIN   PA1
+
+  
+
+// Encoder2
+
+#define ENCODER2_A_PIN   PB6
+
+#define ENCODER2_B_PIN   PB7
+
+  
+  
+
+// ============================================================
+
+// YahBoom_BL 蓝牙串口 —— UART5
+
+// YahBoom_BL TXD -> STM32 PD2  (UART5_RX)
+
+// YahBoom_BL RXD -> STM32 PC12 (UART5_TX)
+
+// ============================================================
+
+  
+
+#define BT_RX_PIN PD2
+
+#define BT_TX_PIN PC12
+
+  
+
+HardwareSerial BTSerial(
+
+    BT_RX_PIN,
+
+    BT_TX_PIN
+
+);
+
+  
+
+const uint32_t BT_BAUD = 9600;
+
+  
+  
+
+// ============================================================
+
+// 方向参数
+
+// ============================================================
+
+  
+
+// 已确认GY方向正确
+
+const float GY_DIRECTION = 1.0f;
+
+  
+
+// IMU前向线加速度方向。
+
+// 当前按BMI270安装方向给出初始值。
+
+// 如果手推车辆向前时 imuForwardAccelG 长期显示为负，改成 +1.0f。
+
+const float IMU_FORWARD_ACCEL_DIRECTION = -1.0f;
+
+  
+
+// 转向角速度方向
+
+const float TURN_GYRO_DIRECTION = 1.0f;
+
+  
+
+// 整体平衡方向
+
+int balanceDirection = 1;
+
+  
+
+// 电机安装方向
+
+bool motor1Invert = false;
+
+bool motor2Invert = true;
+
+  
+
+// 编码器方向
+
+int encoder1Direction = 1;
+
+int encoder2Direction = 1;
+
+  
+  
+
+// ============================================================
+
+// 机械平衡角
+
+// ============================================================
+
+  
+
+float balanceAngleOffset = -0.015f;
+
+  
+
+// ============================================================
+
+// PID参数
+
+// ============================================================
+
+  
+
+// ------------------------------------------------------------
+
+// 直立环 PD
+
+// ------------------------------------------------------------
+
+  
+
+float balanceKp = 700.0f;
+
+float balanceKd = 3.0f;
+
+  
+  
+
+// ------------------------------------------------------------
+
+// 串级速度PI外环
+
+//
+
+// 控制结构：
+
+//
+
+// targetForwardSpeed
+
+//        ↓
+
+// 速度误差 = target - Kalman融合速度
+
+//        ↓
+
+//       PI
+
+//        ↓
+
+// speedAngleCorrection
+
+//        ↓
+
+// targetBalanceAngle
+
+//        ↓
+
+// 直立PD（400Hz）
+
+//        ↓
+
+// STEP频率
+
+//
+
+// 速度外环每50ms执行一次 = 20Hz。
+
+// ------------------------------------------------------------
+
+  
+
+// 速度PI参数
+
+// 当前细调版：降低P/I和最大目标角，让速度修正更柔和、更细。
+
+// 调试时若想先只看比例作用，可临时把 speedKi 改为 0.0f。
+
+float speedKp = 0.12f;
+
+float speedKi = 0.12f;
+
+  
+
+// 如果速度环方向反了，只改这里 +1 / -1
+
+int speedLoopDirection = 1;
+
+  
+
+// 速度积分限幅，防止长时间跑偏后积分爆掉
+
+const float SPEED_INTEGRAL_LIMIT = 6.0f;
+
+  
+
+// 速度PI允许移动的最大目标倾角
+
+const float MAX_SPEED_ANGLE = 2.5f;
+
+  
+
+// 很小的速度误差不积分，避免零附近反复积累
+
+const float SPEED_ERROR_DEADBAND = 0.05f;
+
+  
+
+// 目标速度变化限幅。
+
+// 当前targetForwardSpeed通常为0，这个参数主要为后续遥控前进保留。
+
+const float MAX_TARGET_FORWARD_SPEED = 8.0f;
+
+  
+  
+
+// ------------------------------------------------------------
+
+// 速度P直接STEP快速阻尼
+
+//
+
+// 用于解决“只改变目标角度，轮速响应滞后明显”的问题。
+
+// 这一路直接叠加到直立环STEP频率输出，但权限受姿态限制。
+
+// ------------------------------------------------------------
+
+  
+
+float speedDirectKp = 55.0f;                 // Hz / speed_unit
+
+const float MAX_SPEED_DIRECT_OUTPUT = 900.0f; // 最大±600Hz
+
+  
+
+// 姿态接近目标时允许速度直接项参与
+
+const float SPEED_DIRECT_FULL_ANGLE = 2.0f;    // <=2°：100%
+
+const float SPEED_DIRECT_DISABLE_ANGLE = 4.0f; // >=4°：0%
+
+  
+
+// 角速度太大时，优先救姿态，关闭速度直接项
+
+const float SPEED_DIRECT_MAX_GYRO_DPS = 80.0f;
+
+  
+  
+
+// ------------------------------------------------------------
+
+// 位置快速拉回
+
+//
+
+// 作用：车只要离开开机位置一点点，就立即给出反向STEP修正。
+
+// 这一路直接读取编码器累计位置，400Hz更新，不等待50ms速度窗口。
+
+// ------------------------------------------------------------
+
+  
+
+float positionDirectKp = 20.0f;                  // Hz / encoder_count
+
+const float MAX_POSITION_DIRECT_OUTPUT = 300.0f; // 最大±300Hz
+
+  
+
+// 位置死区设得很小，0.5~1个平均计数就开始有拉回趋势
+
+const float POSITION_DEADBAND_COUNT = 0.5f;
+
+  
+  
+
+// ------------------------------------------------------------
+
+// 转向环 PD
+
+// 当前关闭
+
+// ------------------------------------------------------------
+
+  
+
+float turnKp = 0.0f;
+
+float turnKd = 0.0f;
+
+  
+  
+
+// ============================================================
+
+// 目标值
+
+// ============================================================
+
+  
+
+float targetForwardSpeed = 0.0f;
+
+float targetTurnRate = 0.0f;
+
+  
+
+// ============================================================
+
+// 目标角阶跃测试
+
+//
+
+// TEST_TARGET_ANGLE_OFFSET:
+
+// 当前关闭阶跃测试：TEST_TARGET_ANGLE_OFFSET = 0.0f
+
+// 速度PI同样关闭。
+
+// 本版只用于观察：
+
+//   1. Kalman pitch
+
+//   2. gyroPitchRate
+
+//
+
+// 用于判断落地运动时：
+
+// 是真实车体仍在持续旋转，还是Kalman角度被动态加速度拉偏。
+
+// ============================================================
+
+  
+
+// 目标角阶跃诊断已关闭，正式外环版本不再使用固定阶跃。
+
+  
+  
+
+// ============================================================
+
+// 速度PI控制变量
+
+// ============================================================
+
+  
+
+float speedError = 0.0f;
+
+float speedIntegral = 0.0f;
+
+  
+
+// 速度PI最终输出的目标倾角修正
+
+float speedAngleCorrection = 0.0f;
+
+  
+  
+
+// ============================================================
+
+// 电机
+
+// ============================================================
+
+  
+
+const float MOTOR_STOP_THRESHOLD_HZ = 1.0f;
+
+const float PWM_UPDATE_MIN_DELTA_HZ = 5.0f;
+
+  
+
+// ============================================================
+
+// 电机输出保持 / 瞬时故障去抖
+
+// ============================================================
+
+  
+
+const bool HOLD_LAST_OUTPUT_ON_ZERO = true;
+
+  
+
+// 仅允许短时间保持0输出。
+
+// 400Hz下3帧约7.5ms，避免过零换向时旧方向保持太久。
+
+const uint8_t ZERO_HOLD_MAX_CYCLES = 3;
+
+uint8_t motor1ZeroHoldCount = 0;
+
+uint8_t motor2ZeroHoldCount = 0;
+
+  
+
+// 400Hz下8帧约20ms
+
+const uint8_t IMU_FAIL_CONFIRM_COUNT = 8;
+
+uint8_t imuFailCount = 0;
+
+  
+
+const uint8_t FALL_CONFIRM_COUNT = 8;
+
+uint8_t fallConfirmCount = 0;
+
+  
+
+// 严重倾倒时立即停机
+
+const float EMERGENCY_FALL_ANGLE_DEG = 50.0f;
+
+  
+  
+
+// ============================================================
+
+// 大角度直立优先
+
+//
+
+// 小角度：速度环 + 位置环全部参与
+
+// 中等角度：外环平滑减弱
+
+// 大角度：外环完全退出，只保留直立PD救车
+
+// ============================================================
+
+  
+
+const float OUTER_FULL_ANGLE_DEG = 2.5f;
+
+const float OUTER_DISABLE_ANGLE_DEG = 4.0f;
+
+  
+
+// 大角度时速度积分缓慢释放，避免恢复后旧积分继续推车
+
+const float SPEED_INTEGRAL_DECAY_BIG_ANGLE = 0.95f;
+
+  
+
+// 外环当前权限：0~1
+
+float outerLoopAuthority = 1.0f;
+
+  
+  
+
+// ============================================================
+
+// 倒地保护
+
+// ============================================================
+
+  
+
+const float FALL_ANGLE_DEG = 30.0f;
+
+  
+  
+
+// ============================================================
+
+// 固定400Hz控制
+
+// ============================================================
+
+  
+
+const uint32_t CONTROL_PERIOD_US = 2500;
+
+const float CONTROL_DT = 0.0025f;
+
+  
+  
+
+// ============================================================
+
+// BMI270
+
+// ============================================================
+
+  
+
+TwoWire BMIWire(
+
+    BMI_SDA_PIN,
+
+    BMI_SCL_PIN
+
+);
+
+  
+
+BMI270 imu;
+
+  
+
+const uint8_t BMI270_ADDRESS =
+
+    BMI2_I2C_PRIM_ADDR;
+
+  
+  
+
+// ============================================================
+
+// BMI270寄存器
+
+// ============================================================
+
+  
+
+const uint8_t BMI270_REG_ACC_CONF = 0x40;
+
+const uint8_t BMI270_REG_GYR_CONF = 0x42;
+
+  
+
+// 400Hz配置
+
+const uint8_t BMI270_ACC_CONF_400HZ = 0xAA;
+
+const uint8_t BMI270_GYR_CONF_400HZ = 0xAA;
+
+  
+  
+
+// ============================================================
+
+// 电机硬件定时器
+
+// ============================================================
+
+  
+
+HardwareTimer motor1Timer(TIM3);
+
+HardwareTimer motor2Timer(TIM1);
+
+  
+
+float motor1LastCommandHz = 0.0f;
+
+float motor2LastCommandHz = 0.0f;
+
+  
+  
+
+// ============================================================
+
+// 编码器 + 多源速度Kalman
+
+// ============================================================
+
+  
+
+volatile int32_t encoder1Count = 0;
+
+volatile int32_t encoder2Count = 0;
+
+  
+
+int32_t lastEncoder1Count = 0;
+
+int32_t lastEncoder2Count = 0;
+
+  
+
+float encoderSpeed1 = 0.0f;
+
+float encoderSpeed2 = 0.0f;
+
+  
+
+// 编码器直接测得的车辆速度，单位：count / 50ms
+
+float rawVehicleSpeed = 0.0f;
+
+  
+
+// 多源Kalman最终估计速度，仍统一使用 count / 50ms
+
+float vehicleSpeed = 0.0f;
+
+  
+
+// 车辆相对开机/重新站立位置的累计位移，单位为平均编码器count
+
+float vehiclePosition = 0.0f;
+
+  
+
+// 位置零点对应的两个编码器累计计数
+
+int32_t positionZeroCount1 = 0;
+
+int32_t positionZeroCount2 = 0;
+
+  
+
+// 目标位置固定为0，即尽量回到启动位置
+
+float targetVehiclePosition = 0.0f;
+
+  
+
+// 位置直接STEP修正
+
+float positionDirectOutput = 0.0f;
+
+  
+  
+
+// ------------------------------------------------------------
+
+// IMU前向加速度
+
+//
+
+// BMI270：X近似竖直，Z近似前后。
+
+// 利用Pitch去掉Z轴中的重力分量，再作为速度Kalman预测输入。
+
+// ------------------------------------------------------------
+
+  
+
+float imuForwardAccelG = 0.0f;
+
+float imuForwardAccelFilteredG = 0.0f;
+
+  
+
+// 400Hz低通，抑制步进电机高频振动
+
+const float IMU_ACCEL_LPF_ALPHA = 0.05f;
+
+  
+
+// 防止偶发振动尖峰直接把速度预测带飞
+
+const float IMU_ACCEL_CLAMP_G = 0.60f;
+
+  
+
+// 用于速度预测时的小加速度死区。
+
+// 静止附近的IMU零偏/振动不再持续积分成假速度。
+
+const float IMU_SPEED_ACCEL_DEADBAND_G = 0.03f;
+
+  
+
+// 每个400Hz周期，IMU最多只允许把速度估计改变这么多。
+
+// 防止偶发冲击直接把融合速度带飞。
+
+const float MAX_IMU_SPEED_DELTA_PER_CYCLE = 0.02f;
+
+  
+  
+
+// ------------------------------------------------------------
+
+// 速度Kalman参数
+
+//
+
+// 状态：vehicleSpeed
+
+// 预测：IMU线加速度
+
+// 测量：50ms编码器速度
+
+//
+
+// 由于当前没有轮径、编码器每米计数等绝对标定参数，
+
+// IMU_ACCEL_TO_SPEED_GAIN采用保守经验比例。
+
+// 后续只需调这个比例，不影响编码器长期基准。
+
+// ------------------------------------------------------------
+
+  
+
+// 把 g 转换为 “count/50ms 每秒的变化率” 的经验系数
+
+float IMU_ACCEL_TO_SPEED_GAIN = 3.0f;
+
+  
+
+// 基础过程噪声
+
+float SPEED_KALMAN_Q_BASE = 0.20f;
+
+  
+
+// 电机命令越大，说明真实速度越可能快速变化，适当增大Q
+
+float SPEED_KALMAN_Q_MOTOR_GAIN = 0.0008f;
+
+  
+
+// 编码器测量噪声：低速时量化严重，所以R较大
+
+float SPEED_KALMAN_R_LOW_SPEED = 0.20f;
+
+  
+
+// 中高速时编码器连续性更好，R减小
+
+float SPEED_KALMAN_R_NORMAL = 0.08f;
+
+  
+
+// Kalman协方差
+
+float speedKalmanP = 1.0f;
+
+  
+
+// 当前使用的Q/R，仅调试观察
+
+float speedKalmanQ = SPEED_KALMAN_Q_BASE;
+
+float speedKalmanR = SPEED_KALMAN_R_LOW_SPEED;
+
+  
+
+// IMU预测可信度。
+
+// 当 |a|-1g 偏差大时，说明振动/线性冲击严重，降低IMU预测作用。
+
+float imuSpeedPredictionTrust = 1.0f;
+
+  
+  
+  
+  
+
+// ============================================================
+
+// IMU数据
+
+// ============================================================
+
+  
+
+float ax = 0.0f;
+
+float ay = 0.0f;
+
+float az = 0.0f;
+
+  
+
+float gx = 0.0f;
+
+float gy = 0.0f;
+
+float gz = 0.0f;
+
+  
+  
+
+// ============================================================
+
+// IMU零位
+
+// ============================================================
+
+  
+
+float pitchZero = 0.0f;
+
+float gyroYZero = 0.0f;
+
+float gyroXZero = 0.0f;
+
+  
+  
+
+// ============================================================
+
+// 姿态
+
+// ============================================================
+
+  
+
+float accPitch = 0.0f;
+
+float pitch = 0.0f;
+
+  
+
+float gyroPitchRate = 0.0f;
+
+float gyroTurnRate = 0.0f;
+
+  
+  
+
+// ============================================================
+
+// Kalman参数
+
+// Angle + Gyro Bias
+
+// ============================================================
+
+  
+
+float kalmanAngle = 0.0f;
+
+float kalmanBias = 0.0f;
+
+  
+
+float P00 = 1.0f;
+
+float P01 = 0.0f;
+
+float P10 = 0.0f;
+
+float P11 = 1.0f;
+
+  
+
+// 快速响应参数
+
+float Q_angle = 0.005f;
+
+float Q_bias = 0.0005f;
+
+  
+
+// 基础测量噪声：静止/低动态时使用
+
+float R_measure = 0.03f;
+
+  
+
+// ============================================================
+
+// 动态加速度可信度
+
+//
+
+// 原理：
+
+// 加速度模长接近1g -> 加速度计主要测到重力，可信度高
+
+// 加速度模长偏离1g -> 存在线性加速度/振动，降低加速度角权重
+
+//
+
+// dynamicR 越大，Kalman越不相信accPitch，越依赖陀螺仪预测。
+
+// ============================================================
+
+  
+
+float accelMagnitude = 1.0f;
+
+float accelMagnitudeError = 0.0f;
+
+float dynamicR = 0.03f;
+
+  
+
+// 先用比较保守的一组阈值
+
+const float ACC_ERR_LOW  = 0.05f;
+
+const float ACC_ERR_HIGH = 0.15f;
+
+  
+
+const float R_LOW_DYNAMIC  = 0.03f;
+
+const float R_MID_DYNAMIC  = 0.10f;
+
+const float R_HIGH_DYNAMIC = 0.30f;
+
+  
+  
+
+// ============================================================
+
+// 控制变量
+
+// ============================================================
+
+  
+
+// speedAngleCorrection 已在前面的“漂移拉回状态变量”中定义
+
+  
+
+float targetBalanceAngle = 2.9f;
+
+  
+
+float balanceOutput = 0.0f;
+
+float turnOutput = 0.0f;
+
+  
+
+// 速度P直接STEP修正
+
+float speedDirectOutput = 0.0f;
+
+  
+
+// 根据姿态分配给速度直接项的权限：0 / 0.5 / 1
+
+float speedDirectAuthority = 0.0f;
+
+  
+
+// 直立PD + 速度直接STEP阻尼后的最终前后控制量
+
+float finalBalanceOutput = 0.0f;
+
+  
+
+float lastTurnError = 0.0f;
+
+  
+  
+
+// ============================================================
+
+// 调度
+
+// ============================================================
+
+  
+
+uint32_t lastControlUs = 0;
+
+uint32_t outerLoopDivider = 0;
+
+  
+  
+
+// ============================================================
+
+// 蓝牙遥测
+
+// 控制400Hz，每20个周期发送一次 = 20Hz
+
+// 网页数据格式：time_ms,accPitch,kalmanPitch
+
+// ============================================================
+
+  
+
+const uint32_t TELEMETRY_DIVIDER = 20;
+
+uint32_t telemetryDivider = 0;
+
+  
+  
+
+// ============================================================
+
+// 编码器ISR
+
+// ============================================================
+
+  
+
+void encoder1ISR()
+
+{
+
+    if (
+
+        digitalRead(ENCODER1_A_PIN)
+
+        ==
+
+        digitalRead(ENCODER1_B_PIN)
+
+    )
+
+    {
+
+        encoder1Count += encoder1Direction;
+
+    }
+
+    else
+
+    {
+
+        encoder1Count -= encoder1Direction;
+
+    }
+
+}
+
+  
+  
+
+void encoder2ISR()
+
+{
+
+    if (
+
+        digitalRead(ENCODER2_A_PIN)
+
+        ==
+
+        digitalRead(ENCODER2_B_PIN)
+
+    )
+
+    {
+
+        encoder2Count += encoder2Direction;
+
+    }
+
+    else
+
+    {
+
+        encoder2Count -= encoder2Direction;
+
+    }
+
+}
+
+  
+  
+
+// ============================================================
+
+// BMI270底层寄存器写
+
+// ============================================================
+
+  
+
+bool bmiWriteRegister(
+
+    uint8_t reg,
+
+    uint8_t value
+
+)
+
+{
+
+    BMIWire.beginTransmission(
+
+        BMI270_ADDRESS
+
+    );
+
+  
+
+    BMIWire.write(reg);
+
+    BMIWire.write(value);
+
+  
+
+    uint8_t error =
+
+        BMIWire.endTransmission();
+
+  
+
+    delayMicroseconds(500);
+
+  
+
+    return
+
+        error == 0;
+
+}
+
+  
+  
+
+// ============================================================
+
+// BMI270底层寄存器读
+
+// ============================================================
+
+  
+
+bool bmiReadRegister(
+
+    uint8_t reg,
+
+    uint8_t &value
+
+)
+
+{
+
+    BMIWire.beginTransmission(
+
+        BMI270_ADDRESS
+
+    );
+
+  
+
+    BMIWire.write(reg);
+
+  
+
+    if (
+
+        BMIWire.endTransmission(false)
+
+        != 0
+
+    )
+
+    {
+
+        return false;
+
+    }
+
+  
+  
+
+    uint8_t count =
+
+        BMIWire.requestFrom(
+
+            BMI270_ADDRESS,
+
+            (uint8_t)1
+
+        );
+
+  
+  
+
+    if (
+
+        count != 1
+
+        ||
+
+        !BMIWire.available()
+
+    )
+
+    {
+
+        return false;
+
+    }
+
+  
+  
+
+    value =
+
+        BMIWire.read();
+
+  
+  
+
+    return true;
+
+}
+
+  
+  
+
+// ============================================================
+
+// 配置BMI270为400Hz
+
+// ============================================================
+
+  
+
+bool configureBMI270_400Hz()
+
+{
+
+    if (
+
+        !bmiWriteRegister(
+
+            BMI270_REG_ACC_CONF,
+
+            BMI270_ACC_CONF_400HZ
+
+        )
+
+    )
+
+    {
+
+        return false;
+
+    }
+
+  
+  
+
+    delay(5);
+
+  
+  
+
+    if (
+
+        !bmiWriteRegister(
+
+            BMI270_REG_GYR_CONF,
+
+            BMI270_GYR_CONF_400HZ
+
+        )
+
+    )
+
+    {
+
+        return false;
+
+    }
+
+  
+  
+
+    delay(10);
+
+  
+  
+
+    // 回读确认
+
+    uint8_t accConf = 0;
+
+    uint8_t gyrConf = 0;
+
+  
+  
+
+    if (
+
+        !bmiReadRegister(
+
+            BMI270_REG_ACC_CONF,
+
+            accConf
+
+        )
+
+    )
+
+    {
+
+        return false;
+
+    }
+
+  
+  
+
+    if (
+
+        !bmiReadRegister(
+
+            BMI270_REG_GYR_CONF,
+
+            gyrConf
+
+        )
+
+    )
+
+    {
+
+        return false;
+
+    }
+
+  
+  
+
+    return
+
+        accConf == BMI270_ACC_CONF_400HZ
+
+        &&
+
+        gyrConf == BMI270_GYR_CONF_400HZ;
+
+}
+
+  
+  
+
+// ============================================================
+
+// BMI270读取
+
+// ============================================================
+
+  
+
+bool readBMI270()
+
+{
+
+    if (
+
+        imu.getSensorData()
+
+        != BMI2_OK
+
+    )
+
+    {
+
+        return false;
+
+    }
+
+  
+  
+
+    ax = imu.data.accelX;
+
+    ay = imu.data.accelY;
+
+    az = imu.data.accelZ;
+
+  
+
+    gx = imu.data.gyroX;
+
+    gy = imu.data.gyroY;
+
+    gz = imu.data.gyroZ;
+
+  
+  
+
+    return true;
+
+}
+
+  
+  
+
+// ============================================================
+
+// BMI270初始化
+
+// ============================================================
+
+  
+
+bool initBMI270()
+
+{
+
+    delay(1000);
+
+  
+
+    BMIWire.begin();
+
+  
+
+    BMIWire.setClock(
+
+        400000
+
+    );
+
+  
+
+    delay(200);
+
+  
+  
+
+    for (
+
+        int i = 0;
+
+        i < 10;
+
+        i++
+
+    )
+
+    {
+
+        int8_t result =
+
+            imu.beginI2C(
+
+                BMI270_ADDRESS,
+
+                BMIWire
+
+            );
+
+  
+  
+
+        if (
+
+            result == BMI2_OK
+
+        )
+
+        {
+
+            delay(200);
+
+  
+  
+
+            if (
+
+                imu.getSensorData()
+
+                ==
+
+                BMI2_OK
+
+            )
+
+            {
+
+                return true;
+
+            }
+
+        }
+
+  
+  
+
+        delay(300);
+
+    }
+
+  
+  
+
+    return false;
+
+}
+
+  
+  
+
+// ============================================================
+
+// 加速度Pitch
+
+// X = 上下
+
+// Z = 前后
+
+// ============================================================
+
+  
+
+float calculateAccelPitch()
+
+{
+
+    return
+
+        atan2f(
+
+            -az,
+
+            -ax
+
+        )
+
+        *
+
+        180.0f
+
+        /
+
+        PI;
+
+}
+
+  
+  
+
+// ============================================================
+
+// IMU校准
+
+// 开机保持车体静止
+
+// ============================================================
+
+  
+
+bool calibrateIMU()
+
+{
+
+    const int SAMPLE_COUNT = 500;
+
+  
+
+    float pitchSum = 0.0f;
+
+    float gyroYSum = 0.0f;
+
+    float gyroXSum = 0.0f;
+
+  
+
+    int validCount = 0;
+
+  
+  
+
+    delay(500);
+
+  
+  
+
+    for (
+
+        int i = 0;
+
+        i < SAMPLE_COUNT;
+
+        i++
+
+    )
+
+    {
+
+        if (
+
+            readBMI270()
+
+        )
+
+        {
+
+            pitchSum +=
+
+                calculateAccelPitch();
+
+  
+
+            gyroYSum +=
+
+                gy;
+
+  
+
+            gyroXSum +=
+
+                gx;
+
+  
+
+            validCount++;
+
+        }
+
+  
+  
+
+        delay(3);
+
+    }
+
+  
+  
+
+    if (
+
+        validCount
+
+        <
+
+        SAMPLE_COUNT / 2
+
+    )
+
+    {
+
+        return false;
+
+    }
+
+  
+  
+
+    pitchZero =
+
+        pitchSum
+
+        /
+
+        validCount;
+
+  
+  
+
+    gyroYZero =
+
+        gyroYSum
+
+        /
+
+        validCount;
+
+  
+  
+
+    gyroXZero =
+
+        gyroXSum
+
+        /
+
+        validCount;
+
+  
+  
+
+    accPitch = 0.0f;
+
+    pitch = 0.0f;
+
+  
+
+    kalmanAngle = 0.0f;
+
+    kalmanBias = 0.0f;
+
+  
+
+    P00 = 1.0f;
+
+    P01 = 0.0f;
+
+    P10 = 0.0f;
+
+    P11 = 1.0f;
+
+  
+  
+
+    return true;
+
+}
+
+  
+  
+
+// ============================================================
+
+// Kalman
+
+// ============================================================
+
+  
+
+float updateKalman(
+
+    float measuredAngle,
+
+    float measuredRate,
+
+    float dt
+
+)
+
+{
+
+    // --------------------------------------------------------
+
+    // 1. 状态预测
+
+    // --------------------------------------------------------
+
+  
+
+    float rate =
+
+        measuredRate
+
+        -
+
+        kalmanBias;
+
+  
+  
+
+    kalmanAngle +=
+
+        dt
+
+        *
+
+        rate;
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 2. 协方差预测
+
+    // --------------------------------------------------------
+
+  
+
+    P00 +=
+
+        dt
+
+        *
+
+        (
+
+            dt * P11
+
+            -
+
+            P01
+
+            -
+
+            P10
+
+            +
+
+            Q_angle
+
+        );
+
+  
+  
+
+    P01 -=
+
+        dt
+
+        *
+
+        P11;
+
+  
+  
+
+    P10 -=
+
+        dt
+
+        *
+
+        P11;
+
+  
+  
+
+    P11 +=
+
+        Q_bias
+
+        *
+
+        dt;
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 3. 测量创新
+
+    // --------------------------------------------------------
+
+  
+
+    float innovation =
+
+        measuredAngle
+
+        -
+
+        kalmanAngle;
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 动态测量噪声
+
+    //
+
+    // 车辆静止/低动态时 dynamicR ≈ 0.03
+
+    // 车辆加速或振动明显时 dynamicR 增大，
+
+    // 从而暂时减少加速度角对Kalman的修正。
+
+    // --------------------------------------------------------
+
+  
+
+    float S =
+
+        P00
+
+        +
+
+        dynamicR;
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 4. Kalman增益
+
+    // --------------------------------------------------------
+
+  
+
+    float K0 =
+
+        P00
+
+        /
+
+        S;
+
+  
+  
+
+    float K1 =
+
+        P10
+
+        /
+
+        S;
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 5. 状态修正
+
+    // --------------------------------------------------------
+
+  
+
+    kalmanAngle +=
+
+        K0
+
+        *
+
+        innovation;
+
+  
+  
+
+    kalmanBias +=
+
+        K1
+
+        *
+
+        innovation;
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 6. 协方差修正
+
+    // --------------------------------------------------------
+
+  
+
+    float oldP00 = P00;
+
+    float oldP01 = P01;
+
+  
+  
+
+    P00 -=
+
+        K0
+
+        *
+
+        oldP00;
+
+  
+  
+
+    P01 -=
+
+        K0
+
+        *
+
+        oldP01;
+
+  
+  
+
+    P10 -=
+
+        K1
+
+        *
+
+        oldP00;
+
+  
+  
+
+    P11 -=
+
+        K1
+
+        *
+
+        oldP01;
+
+  
+  
+
+    return
+
+        kalmanAngle;
+
+}
+
+  
+  
+
+// ============================================================
+
+// 姿态更新
+
+// ============================================================
+
+  
+
+void updateAttitude()
+
+{
+
+    // --------------------------------------------------------
+
+    // 1. 原始加速度角
+
+    // --------------------------------------------------------
+
+  
+
+    accPitch =
+
+        calculateAccelPitch()
+
+        -
+
+        pitchZero;
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 2. Pitch轴陀螺仪角速度
+
+    // --------------------------------------------------------
+
+  
+
+    gyroPitchRate =
+
+        GY_DIRECTION
+
+        *
+
+        (
+
+            gy
+
+            -
+
+            gyroYZero
+
+        );
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 3. 计算三轴加速度模长
+
+    //
+
+    // BMI270库这里的加速度量按g量级使用。
+
+    // 静止时理论上接近1g。
+
+    // --------------------------------------------------------
+
+  
+
+    accelMagnitude =
+
+        sqrtf(
+
+            ax * ax
+
+            +
+
+            ay * ay
+
+            +
+
+            az * az
+
+        );
+
+  
+  
+
+    accelMagnitudeError =
+
+        fabsf(
+
+            accelMagnitude
+
+            -
+
+            1.0f
+
+        );
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 4. 根据 |a|-1g 动态调整R
+
+    //
+
+    // 越偏离1g，说明线性加速度/振动越明显，
+
+    // 这时accPitch可信度降低。
+
+    // --------------------------------------------------------
+
+  
+
+    if (
+
+        accelMagnitudeError
+
+        <
+
+        ACC_ERR_LOW
+
+    )
+
+    {
+
+        dynamicR =
+
+            R_LOW_DYNAMIC;
+
+    }
+
+    else if (
+
+        accelMagnitudeError
+
+        <
+
+        ACC_ERR_HIGH
+
+    )
+
+    {
+
+        dynamicR =
+
+            R_MID_DYNAMIC;
+
+    }
+
+    else
+
+    {
+
+        dynamicR =
+
+            R_HIGH_DYNAMIC;
+
+    }
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 5. Kalman融合
+
+    // --------------------------------------------------------
+
+  
+
+    pitch =
+
+        updateKalman(
+
+            accPitch,
+
+            gyroPitchRate,
+
+            CONTROL_DT
+
+        );
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 6. 根据Pitch去除Z轴重力分量，得到前向线加速度趋势
+
+    //
+
+    // 静止时：
+
+    // az ≈ -sin(pitch)
+
+    //
+
+    // 因此：
+
+    // az + sin(pitch) ≈ 0
+
+    //
+
+    // 再乘方向参数统一为“向前加速为正”。
+
+    // --------------------------------------------------------
+
+  
+
+    float pitchRad =
+
+        pitch
+
+        *
+
+        DEG_TO_RAD;
+
+  
+  
+
+    imuForwardAccelG =
+
+        IMU_FORWARD_ACCEL_DIRECTION
+
+        *
+
+        (
+
+            az
+
+            +
+
+            sinf(pitchRad)
+
+        );
+
+  
+  
+
+    // 尖峰限幅
+
+    if (
+
+        imuForwardAccelG
+
+        >
+
+        IMU_ACCEL_CLAMP_G
+
+    )
+
+    {
+
+        imuForwardAccelG =
+
+            IMU_ACCEL_CLAMP_G;
+
+    }
+
+  
+  
+
+    if (
+
+        imuForwardAccelG
+
+        <
+
+        -IMU_ACCEL_CLAMP_G
+
+    )
+
+    {
+
+        imuForwardAccelG =
+
+            -IMU_ACCEL_CLAMP_G;
+
+    }
+
+  
+  
+
+    // 轻度低通
+
+    imuForwardAccelFilteredG =
+
+        (1.0f - IMU_ACCEL_LPF_ALPHA)
+
+        *
+
+        imuForwardAccelFilteredG
+
+        +
+
+        IMU_ACCEL_LPF_ALPHA
+
+        *
+
+        imuForwardAccelG;
+
+  
+  
+
+    // 根据加速度模长偏离1g的程度降低IMU预测可信度
+
+    if (
+
+        accelMagnitudeError
+
+        <
+
+        ACC_ERR_LOW
+
+    )
+
+    {
+
+        imuSpeedPredictionTrust =
+
+            1.0f;
+
+    }
+
+    else if (
+
+        accelMagnitudeError
+
+        <
+
+        ACC_ERR_HIGH
+
+    )
+
+    {
+
+        imuSpeedPredictionTrust =
+
+            0.45f;
+
+    }
+
+    else
+
+    {
+
+        imuSpeedPredictionTrust =
+
+            0.12f;
+
+    }
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 7. 转向角速度
+
+    // --------------------------------------------------------
+
+  
+
+    gyroTurnRate =
+
+        TURN_GYRO_DIRECTION
+
+        *
+
+        (
+
+            gx
+
+            -
+
+            gyroXZero
+
+        );
+
+}
+
+  
+  
+
+// ============================================================
+
+// 编码器初始化
+
+// ============================================================
+
+  
+
+void initEncoders()
+
+{
+
+    pinMode(
+
+        ENCODER1_A_PIN,
+
+        INPUT_PULLUP
+
+    );
+
+  
+
+    pinMode(
+
+        ENCODER1_B_PIN,
+
+        INPUT_PULLUP
+
+    );
+
+  
+
+    pinMode(
+
+        ENCODER2_A_PIN,
+
+        INPUT_PULLUP
+
+    );
+
+  
+
+    pinMode(
+
+        ENCODER2_B_PIN,
+
+        INPUT_PULLUP
+
+    );
+
+  
+  
+
+    attachInterrupt(
+
+        digitalPinToInterrupt(
+
+            ENCODER1_A_PIN
+
+        ),
+
+        encoder1ISR,
+
+        CHANGE
+
+    );
+
+  
+  
+
+    attachInterrupt(
+
+        digitalPinToInterrupt(
+
+            ENCODER2_A_PIN
+
+        ),
+
+        encoder2ISR,
+
+        CHANGE
+
+    );
+
+}
+
+  
+  
+
+// ============================================================
+
+// 电机初始化
+
+// ============================================================
+
+  
+
+void initMotors()
+
+{
+
+    pinMode(
+
+        MOTOR1_DIR_PIN,
+
+        OUTPUT
+
+    );
+
+  
+
+    pinMode(
+
+        MOTOR2_DIR_PIN,
+
+        OUTPUT
+
+    );
+
+  
+  
+
+    digitalWrite(
+
+        MOTOR1_DIR_PIN,
+
+        LOW
+
+    );
+
+  
+  
+
+    digitalWrite(
+
+        MOTOR2_DIR_PIN,
+
+        LOW
+
+    );
+
+}
+
+  
+  
+
+// ============================================================
+
+// 电机停止
+
+// 只pause，不修改STEP pinMode
+
+// ============================================================
+
+  
+
+void stopMotor1()
+
+{
+
+    motor1Timer.pause();
+
+  
+
+    motor1LastCommandHz =
+
+        0.0f;
+
+}
+
+  
+  
+
+void stopMotor2()
+
+{
+
+    motor2Timer.pause();
+
+  
+
+    motor2LastCommandHz =
+
+        0.0f;
+
+}
+
+  
+  
+
+void stopBothMotors()
+
+{
+
+    stopMotor1();
+
+    stopMotor2();
+
+}
+
+  
+  
+
+// ============================================================
+
+// Motor1
+
+// ============================================================
+
+  
+
+void setMotor1(
+
+    float commandHz
+
+)
+
+{
+
+    if (
+
+        !isfinite(commandHz)
+
+    )
+
+    {
+
+        return;
+
+    }
+
+  
+
+    if (
+
+        fabsf(commandHz)
+
+        <
+
+        MOTOR_STOP_THRESHOLD_HZ
+
+    )
+
+    {
+
+        if (
+
+            HOLD_LAST_OUTPUT_ON_ZERO
+
+            &&
+
+            motor1ZeroHoldCount
+
+            <
+
+            ZERO_HOLD_MAX_CYCLES
+
+        )
+
+        {
+
+            motor1ZeroHoldCount++;
+
+            return;
+
+        }
+
+  
+
+        motor1ZeroHoldCount =
+
+            0;
+
+  
+
+        stopMotor1();
+
+        return;
+
+    }
+
+  
+
+    // 新有效输出到来，清零0输出保持计数
+
+    motor1ZeroHoldCount =
+
+        0;
+
+  
+  
+
+    bool dir =
+
+        commandHz
+
+        >=
+
+        0.0f;
+
+  
+  
+
+    if (
+
+        motor1Invert
+
+    )
+
+    {
+
+        dir =
+
+            !dir;
+
+    }
+
+  
+  
+
+    bool directionChanged =
+
+        (
+
+            motor1LastCommandHz
+
+            *
+
+            commandHz
+
+        )
+
+        <
+
+        0.0f;
+
+  
+  
+
+    if (
+
+        directionChanged
+
+    )
+
+    {
+
+        motor1Timer.pause();
+
+    }
+
+  
+  
+
+    digitalWrite(
+
+        MOTOR1_DIR_PIN,
+
+        dir ? HIGH : LOW
+
+    );
+
+  
+  
+
+    if (
+
+        directionChanged
+
+    )
+
+    {
+
+        delayMicroseconds(2);
+
+    }
+
+  
+  
+
+    float frequency =
+
+        fabsf(
+
+            commandHz
+
+        );
+
+  
+  
+
+    bool frequencyChanged =
+
+        motor1LastCommandHz
+
+        ==
+
+        0.0f
+
+        ||
+
+        fabsf(
+
+            fabsf(
+
+                motor1LastCommandHz
+
+            )
+
+            -
+
+            frequency
+
+        )
+
+        >=
+
+        PWM_UPDATE_MIN_DELTA_HZ;
+
+  
+  
+
+    if (
+
+        directionChanged
+
+        ||
+
+        frequencyChanged
+
+    )
+
+    {
+
+        motor1Timer.setPWM(
+
+            1,
+
+            MOTOR1_STEP_PIN,
+
+            (uint32_t)frequency,
+
+            50
+
+        );
+
+  
+  
+
+        motor1Timer.resume();
+
+  
+  
+
+        motor1LastCommandHz =
+
+            commandHz;
+
+    }
+
+}
+
+  
+  
+
+// ============================================================
+
+// Motor2
+
+// ============================================================
+
+  
+
+void setMotor2(
+
+    float commandHz
+
+)
+
+{
+
+    if (
+
+        !isfinite(commandHz)
+
+    )
+
+    {
+
+        return;
+
+    }
+
+  
+
+    if (
+
+        fabsf(commandHz)
+
+        <
+
+        MOTOR_STOP_THRESHOLD_HZ
+
+    )
+
+    {
+
+        if (
+
+            HOLD_LAST_OUTPUT_ON_ZERO
+
+            &&
+
+            motor2ZeroHoldCount
+
+            <
+
+            ZERO_HOLD_MAX_CYCLES
+
+        )
+
+        {
+
+            motor2ZeroHoldCount++;
+
+            return;
+
+        }
+
+  
+
+        motor2ZeroHoldCount =
+
+            0;
+
+  
+
+        stopMotor2();
+
+        return;
+
+    }
+
+  
+
+    // 新有效输出到来，清零0输出保持计数
+
+    motor2ZeroHoldCount =
+
+        0;
+
+  
+  
+
+    bool dir =
+
+        commandHz
+
+        >=
+
+        0.0f;
+
+  
+  
+
+    if (
+
+        motor2Invert
+
+    )
+
+    {
+
+        dir =
+
+            !dir;
+
+    }
+
+  
+  
+
+    bool directionChanged =
+
+        (
+
+            motor2LastCommandHz
+
+            *
+
+            commandHz
+
+        )
+
+        <
+
+        0.0f;
+
+  
+  
+
+    if (
+
+        directionChanged
+
+    )
+
+    {
+
+        motor2Timer.pause();
+
+    }
+
+  
+  
+
+    digitalWrite(
+
+        MOTOR2_DIR_PIN,
+
+        dir ? HIGH : LOW
+
+    );
+
+  
+  
+
+    if (
+
+        directionChanged
+
+    )
+
+    {
+
+        delayMicroseconds(2);
+
+    }
+
+  
+  
+
+    float frequency =
+
+        fabsf(
+
+            commandHz
+
+        );
+
+  
+  
+
+    bool frequencyChanged =
+
+        motor2LastCommandHz
+
+        ==
+
+        0.0f
+
+        ||
+
+        fabsf(
+
+            fabsf(
+
+                motor2LastCommandHz
+
+            )
+
+            -
+
+            frequency
+
+        )
+
+        >=
+
+        PWM_UPDATE_MIN_DELTA_HZ;
+
+  
+  
+
+    if (
+
+        directionChanged
+
+        ||
+
+        frequencyChanged
+
+    )
+
+    {
+
+        motor2Timer.setPWM(
+
+            1,
+
+            MOTOR2_STEP_PIN,
+
+            (uint32_t)frequency,
+
+            50
+
+        );
+
+  
+  
+
+        motor2Timer.resume();
+
+  
+  
+
+        motor2LastCommandHz =
+
+            commandHz;
+
+    }
+
+}
+
+  
+  
+
+// ============================================================
+
+// 多源速度Kalman
+
+//
+
+// 400Hz：用IMU前向线加速度做预测
+
+// 20Hz ：用编码器速度做测量修正
+
+//
+
+// 电机命令不直接当“真实速度”，只用来动态调整过程噪声Q：
+
+// 控制命令大 -> 系统更可能快速改变速度 -> Kalman更允许状态变化。
+
+// ============================================================
+
+  
+
+void predictVehicleSpeedKalman()
+
+{
+
+    // --------------------------------------------------------
+
+    // 1. IMU只负责“短期趋势预测”
+
+    //
+
+    // 编码器负责长期速度绝对值；
+
+    // IMU不允许长期主导vehicleSpeed。
+
+    // --------------------------------------------------------
+
+  
+
+    float accelForSpeed =
+
+        imuForwardAccelFilteredG;
+
+  
+  
+
+    // 小加速度死区：
+
+    // 防止0.01~0.02g级别的零偏不断积分成假速度。
+
+    if (
+
+        fabsf(accelForSpeed)
+
+        <
+
+        IMU_SPEED_ACCEL_DEADBAND_G
+
+    )
+
+    {
+
+        accelForSpeed =
+
+            0.0f;
+
+    }
+
+  
+  
+
+    float imuDeltaSpeed =
+
+        accelForSpeed
+
+        *
+
+        imuSpeedPredictionTrust
+
+        *
+
+        IMU_ACCEL_TO_SPEED_GAIN
+
+        *
+
+        CONTROL_DT;
+
+  
+  
+
+    // 单周期预测限幅
+
+    if (
+
+        imuDeltaSpeed
+
+        >
+
+        MAX_IMU_SPEED_DELTA_PER_CYCLE
+
+    )
+
+    {
+
+        imuDeltaSpeed =
+
+            MAX_IMU_SPEED_DELTA_PER_CYCLE;
+
+    }
+
+  
+  
+
+    if (
+
+        imuDeltaSpeed
+
+        <
+
+        -MAX_IMU_SPEED_DELTA_PER_CYCLE
+
+    )
+
+    {
+
+        imuDeltaSpeed =
+
+            -MAX_IMU_SPEED_DELTA_PER_CYCLE;
+
+    }
+
+  
+  
+
+    vehicleSpeed +=
+
+        imuDeltaSpeed;
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 2. 动态过程噪声Q
+
+    //
+
+    // 电机命令越大，系统越可能快速改变速度，
+
+    // 因此允许Kalman状态更快变化。
+
+    //
+
+    // 注意：balanceOutput只调Q，不直接当作真实速度。
+
+    // --------------------------------------------------------
+
+  
+
+    speedKalmanQ =
+
+        SPEED_KALMAN_Q_BASE
+
+        +
+
+        SPEED_KALMAN_Q_MOTOR_GAIN
+
+        *
+
+        fabsf(balanceOutput);
+
+  
+  
+
+    speedKalmanP +=
+
+        speedKalmanQ
+
+        *
+
+        CONTROL_DT;
+
+}
+
+  
+  
+
+void correctVehicleSpeedKalman(
+
+    float encoderMeasurement
+
+)
+
+{
+
+    // --------------------------------------------------------
+
+    // 编码器作为“速度绝对值主测量”
+
+    //
+
+    // 低速时虽然存在0/1 count量化，
+
+    // 但R不再设得过大，避免Kalman长期跟着IMU预测跑偏。
+
+    // --------------------------------------------------------
+
+  
+
+    if (
+
+        fabsf(encoderMeasurement)
+
+        <
+
+        2.0f
+
+    )
+
+    {
+
+        speedKalmanR =
+
+            SPEED_KALMAN_R_LOW_SPEED;
+
+    }
+
+    else
+
+    {
+
+        speedKalmanR =
+
+            SPEED_KALMAN_R_NORMAL;
+
+    }
+
+  
+  
+
+    float innovation =
+
+        encoderMeasurement
+
+        -
+
+        vehicleSpeed;
+
+  
+  
+
+    float innovationCovariance =
+
+        speedKalmanP
+
+        +
+
+        speedKalmanR;
+
+  
+  
+
+    float K =
+
+        speedKalmanP
+
+        /
+
+        innovationCovariance;
+
+  
+  
+
+    vehicleSpeed +=
+
+        K
+
+        *
+
+        innovation;
+
+  
+  
+
+    speedKalmanP =
+
+        (1.0f - K)
+
+        *
+
+        speedKalmanP;
+
+  
+  
+
+    // 防止P数值过小导致后续测量修正越来越迟钝
+
+    if (
+
+        speedKalmanP
+
+        <
+
+        0.02f
+
+    )
+
+    {
+
+        speedKalmanP =
+
+            0.02f;
+
+    }
+
+}
+
+  
+  
+
+// ============================================================
+
+// 漂移拉回外环
+
+// 20Hz速度P + 300ms状态式漂移检测。
+
+// ============================================================
+
+  
+
+void updateOuterLoop()
+
+{
+
+    int32_t count1;
+
+    int32_t count2;
+
+  
+
+    noInterrupts();
+
+  
+
+    count1 =
+
+        encoder1Count;
+
+  
+
+    count2 =
+
+        encoder2Count;
+
+  
+
+    interrupts();
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 1. 50ms编码器增量
+
+    // --------------------------------------------------------
+
+  
+
+    int32_t delta1 =
+
+        count1
+
+        -
+
+        lastEncoder1Count;
+
+  
+  
+
+    int32_t delta2 =
+
+        count2
+
+        -
+
+        lastEncoder2Count;
+
+  
+  
+
+    lastEncoder1Count =
+
+        count1;
+
+  
+
+    lastEncoder2Count =
+
+        count2;
+
+  
+  
+
+    encoderSpeed1 =
+
+        (float)delta1;
+
+  
+  
+
+    encoderSpeed2 =
+
+        (float)delta2;
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 2. 编码器车辆速度
+
+    //
+
+    // 当前沿用此前实测约定：
+
+    // 向前 = 正
+
+    // 向后 = 负
+
+    // --------------------------------------------------------
+
+  
+
+    rawVehicleSpeed =
+
+        -0.5f
+
+        *
+
+        (
+
+            encoderSpeed1
+
+            +
+
+            encoderSpeed2
+
+        );
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 3. 用编码器修正速度Kalman
+
+    //
+
+    // 此时vehicleSpeed已经由：
+
+    // 400Hz IMU预测 + 20Hz编码器修正
+
+    // 得到融合速度。
+
+    // --------------------------------------------------------
+
+  
+
+    correctVehicleSpeedKalman(
+
+        rawVehicleSpeed
+
+    );
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 4. 限制目标速度
+
+    // --------------------------------------------------------
+
+  
+
+    if (
+
+        targetForwardSpeed
+
+        >
+
+        MAX_TARGET_FORWARD_SPEED
+
+    )
+
+    {
+
+        targetForwardSpeed =
+
+            MAX_TARGET_FORWARD_SPEED;
+
+    }
+
+  
+  
+
+    if (
+
+        targetForwardSpeed
+
+        <
+
+        -MAX_TARGET_FORWARD_SPEED
+
+    )
+
+    {
+
+        targetForwardSpeed =
+
+            -MAX_TARGET_FORWARD_SPEED;
+
+    }
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 5. 速度误差
+
+    // --------------------------------------------------------
+
+  
+
+    speedError =
+
+        targetForwardSpeed
+
+        -
+
+        vehicleSpeed;
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 6. 速度P直接STEP快速阻尼
+
+    //
+
+    // 不等待目标角 -> 车身倾斜 -> 直立环这一整段动态，
+
+    // 而是根据融合速度直接给STEP一个小的反向修正。
+
+    // --------------------------------------------------------
+
+  
+
+    speedDirectOutput =
+
+        speedLoopDirection
+
+        *
+
+        speedDirectKp
+
+        *
+
+        speedError;
+
+  
+  
+
+    if (
+
+        speedDirectOutput
+
+        >
+
+        MAX_SPEED_DIRECT_OUTPUT
+
+    )
+
+    {
+
+        speedDirectOutput =
+
+            MAX_SPEED_DIRECT_OUTPUT;
+
+    }
+
+  
+  
+
+    if (
+
+        speedDirectOutput
+
+        <
+
+        -MAX_SPEED_DIRECT_OUTPUT
+
+    )
+
+    {
+
+        speedDirectOutput =
+
+            -MAX_SPEED_DIRECT_OUTPUT;
+
+    }
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 7. 速度积分
+
+    //
+
+    // 外环20Hz，因此dt = 0.05s。
+
+    // 零附近不积分，防止编码器量化和IMU噪声造成慢性漂移。
+
+    // --------------------------------------------------------
+
+  
+
+    if (
+
+        fabsf(speedError)
+
+        >
+
+        SPEED_ERROR_DEADBAND
+
+    )
+
+    {
+
+        speedIntegral +=
+
+            speedError
+
+            *
+
+            0.05f;
+
+    }
+
+  
+  
+
+    // 积分限幅
+
+    if (
+
+        speedIntegral
+
+        >
+
+        SPEED_INTEGRAL_LIMIT
+
+    )
+
+    {
+
+        speedIntegral =
+
+            SPEED_INTEGRAL_LIMIT;
+
+    }
+
+  
+  
+
+    if (
+
+        speedIntegral
+
+        <
+
+        -SPEED_INTEGRAL_LIMIT
+
+    )
+
+    {
+
+        speedIntegral =
+
+            -SPEED_INTEGRAL_LIMIT;
+
+    }
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 8. 速度PI输出目标倾角
+
+    // --------------------------------------------------------
+
+  
+
+    speedAngleCorrection =
+
+        speedLoopDirection
+
+        *
+
+        (
+
+            speedKp
+
+            *
+
+            speedError
+
+            +
+
+            speedKi
+
+            *
+
+            speedIntegral
+
+        );
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 9. 外环目标倾角限幅
+
+    // --------------------------------------------------------
+
+  
+
+    if (
+
+        speedAngleCorrection
+
+        >
+
+        MAX_SPEED_ANGLE
+
+    )
+
+    {
+
+        speedAngleCorrection =
+
+            MAX_SPEED_ANGLE;
+
+    }
+
+  
+  
+
+    if (
+
+        speedAngleCorrection
+
+        <
+
+        -MAX_SPEED_ANGLE
+
+    )
+
+    {
+
+        speedAngleCorrection =
+
+            -MAX_SPEED_ANGLE;
+
+    }
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 10. 串级目标角
+
+    // --------------------------------------------------------
+
+  
+
+    // targetBalanceAngle 不在20Hz外环里直接更新。
+
+    // 由400Hz的 updateOuterLoopAuthority() 根据当前姿态平滑缩放，
+
+    // 大角度时自动恢复到机械平衡角。
+
+}
+
+  
+  
+
+// ============================================================
+
+// 外环权限管理
+
+//
+
+// 使用相对机械平衡角，而不是相对 targetBalanceAngle。
+
+// 这样速度PI改变目标角时，不会影响“大角度判定”。
+
+// ============================================================
+
+  
+
+void updateOuterLoopAuthority()
+
+{
+
+    float uprightError =
+
+        pitch
+
+        -
+
+        balanceAngleOffset;
+
+  
+
+    float absUprightError =
+
+        fabsf(
+
+            uprightError
+
+        );
+
+  
+  
+
+    if (
+
+        absUprightError
+
+        <=
+
+        OUTER_FULL_ANGLE_DEG
+
+    )
+
+    {
+
+        outerLoopAuthority =
+
+            1.0f;
+
+    }
+
+    else if (
+
+        absUprightError
+
+        <
+
+        OUTER_DISABLE_ANGLE_DEG
+
+    )
+
+    {
+
+        outerLoopAuthority =
+
+            (
+
+                OUTER_DISABLE_ANGLE_DEG
+
+                -
+
+                absUprightError
+
+            )
+
+            /
+
+            (
+
+                OUTER_DISABLE_ANGLE_DEG
+
+                -
+
+                OUTER_FULL_ANGLE_DEG
+
+            );
+
+    }
+
+    else
+
+    {
+
+        outerLoopAuthority =
+
+            0.0f;
+
+    }
+
+  
+  
+
+    // 目标角也必须受同一个权限控制。
+
+    // 大角度时直接回到机械平衡角，让直立PD全力救车。
+
+    targetBalanceAngle =
+
+        balanceAngleOffset
+
+        +
+
+        outerLoopAuthority
+
+        *
+
+        speedAngleCorrection;
+
+  
+  
+
+    // 大角度时释放历史积分，避免恢复后旧积分继续把车推走
+
+    if (
+
+        outerLoopAuthority
+
+        <
+
+        0.2f
+
+    )
+
+    {
+
+        speedIntegral *=
+
+            SPEED_INTEGRAL_DECAY_BIG_ANGLE;
+
+    }
+
+}
+
+  
+  
+
+// ============================================================
+
+// 位置快速拉回
+
+//
+
+// 400Hz直接读取编码器累计位置。
+
+// 不经过50ms速度窗口，所以只要编码器出现少量位移就开始反向拉回。
+
+// ============================================================
+
+  
+
+void updatePositionHold()
+
+{
+
+    int32_t count1;
+
+    int32_t count2;
+
+  
+
+    noInterrupts();
+
+  
+
+    count1 =
+
+        encoder1Count;
+
+  
+
+    count2 =
+
+        encoder2Count;
+
+  
+
+    interrupts();
+
+  
+  
+
+    // 与 rawVehicleSpeed 使用同一正负约定：
+
+    // 向前 = 正，向后 = 负
+
+    vehiclePosition =
+
+        -0.5f
+
+        *
+
+        (
+
+            (float)(
+
+                count1
+
+                -
+
+                positionZeroCount1
+
+            )
+
+            +
+
+            (float)(
+
+                count2
+
+                -
+
+                positionZeroCount2
+
+            )
+
+        );
+
+  
+  
+
+    float positionError =
+
+        targetVehiclePosition
+
+        -
+
+        vehiclePosition;
+
+  
+  
+
+    // 极小死区，避免编码器边沿抖动导致反复换向
+
+    if (
+
+        fabsf(positionError)
+
+        <
+
+        POSITION_DEADBAND_COUNT
+
+    )
+
+    {
+
+        positionDirectOutput =
+
+            0.0f;
+
+  
+
+        return;
+
+    }
+
+  
+  
+
+    positionDirectOutput =
+
+        speedLoopDirection
+
+        *
+
+        positionDirectKp
+
+        *
+
+        positionError;
+
+  
+  
+
+    if (
+
+        positionDirectOutput
+
+        >
+
+        MAX_POSITION_DIRECT_OUTPUT
+
+    )
+
+    {
+
+        positionDirectOutput =
+
+            MAX_POSITION_DIRECT_OUTPUT;
+
+    }
+
+  
+  
+
+    if (
+
+        positionDirectOutput
+
+        <
+
+        -MAX_POSITION_DIRECT_OUTPUT
+
+    )
+
+    {
+
+        positionDirectOutput =
+
+            -MAX_POSITION_DIRECT_OUTPUT;
+
+    }
+
+}
+
+  
+  
+
+// ============================================================
+
+// 直立环 PD
+
+// ============================================================
+
+  
+
+void updateBalanceLoop()
+
+{
+
+    float angleError =
+
+        targetBalanceAngle
+
+        -
+
+        pitch;
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 1. 直立PD
+
+    // --------------------------------------------------------
+
+  
+
+    balanceOutput =
+
+        balanceDirection
+
+        *
+
+        (
+
+            balanceKp
+
+            *
+
+            angleError
+
+            -
+
+            balanceKd
+
+            *
+
+            gyroPitchRate
+
+        );
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 2. 直接速度/位置修正权限
+
+    //
+
+    // 与目标角使用同一个 outerLoopAuthority。
+
+    // 大角度时速度环和位置环全部退出。
+
+    // --------------------------------------------------------
+
+  
+
+    speedDirectAuthority =
+
+        outerLoopAuthority;
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 3. 最终混合输出
+
+    // --------------------------------------------------------
+
+  
+
+    finalBalanceOutput =
+
+        balanceOutput
+
+        +
+
+        outerLoopAuthority
+
+        *
+
+        (
+
+            speedDirectOutput
+
+            +
+
+            positionDirectOutput
+
+        );
+
+}
+
+  
+  
+
+// ============================================================
+
+// 转向环 PD
+
+//
+
+// 当前Kp/Kd = 0
+
+// ============================================================
+
+  
+
+void updateTurnLoop()
+
+{
+
+    float turnError =
+
+        targetTurnRate
+
+        -
+
+        gyroTurnRate;
+
+  
+  
+
+    float turnDerivative =
+
+        (
+
+            turnError
+
+            -
+
+            lastTurnError
+
+        )
+
+        /
+
+        CONTROL_DT;
+
+  
+  
+
+    lastTurnError =
+
+        turnError;
+
+  
+  
+
+    turnOutput =
+
+        turnKp
+
+        *
+
+        turnError
+
+        +
+
+        turnKd
+
+        *
+
+        turnDerivative;
+
+}
+
+  
+  
+
+// ============================================================
+
+// 蓝牙发送
+
+// 网页原来的解析格式无需修改：
+
+// time_ms,accPitch,kalmanPitch
+
+// ============================================================
+
+  
+
+void sendTelemetry()
+
+{
+
+    BTSerial.print(
+
+        millis()
+
+    );
+
+  
+
+    BTSerial.print(',');
+
+  
+
+    // 第一条：Kalman融合速度
+
+    BTSerial.print(
+
+        vehicleSpeed,
+
+        3
+
+    );
+
+  
+
+    BTSerial.print(',');
+
+  
+
+    // 第二条：实际参与控制的速度直接STEP修正，单位Hz
+
+    BTSerial.println(
+
+        speedDirectOutput
+
+        *
+
+        speedDirectAuthority,
+
+        3
+
+    );
+
+}
+
+  
+  
+
+// ============================================================
+
+// setup
+
+// ============================================================
+
+  
+
+void setup()
+
+{
+
+    initMotors();
+
+  
+
+    initEncoders();
+
+  
+
+    // --------------------------------------------------------
+
+    // YahBoom_BL UART5
+
+    // --------------------------------------------------------
+
+  
+
+    BTSerial.begin(
+
+        BT_BAUD
+
+    );
+
+  
+
+    delay(100);
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // BMI270初始化
+
+    // --------------------------------------------------------
+
+  
+
+    if (
+
+        !initBMI270()
+
+    )
+
+    {
+
+        stopBothMotors();
+
+  
+
+        while (
+
+            true
+
+        )
+
+        {
+
+            delay(100);
+
+        }
+
+    }
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 配置400Hz
+
+    // --------------------------------------------------------
+
+  
+
+    if (
+
+        !configureBMI270_400Hz()
+
+    )
+
+    {
+
+        stopBothMotors();
+
+  
+
+        while (
+
+            true
+
+        )
+
+        {
+
+            delay(100);
+
+        }
+
+    }
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 校准
+
+    // --------------------------------------------------------
+
+  
+
+    if (
+
+        !calibrateIMU()
+
+    )
+
+    {
+
+        stopBothMotors();
+
+  
+
+        while (
+
+            true
+
+        )
+
+        {
+
+            delay(100);
+
+        }
+
+    }
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 编码器初值
+
+    // --------------------------------------------------------
+
+  
+
+    noInterrupts();
+
+  
+
+    lastEncoder1Count =
+
+        encoder1Count;
+
+  
+
+    lastEncoder2Count =
+
+        encoder2Count;
+
+  
+
+    positionZeroCount1 =
+
+        encoder1Count;
+
+  
+
+    positionZeroCount2 =
+
+        encoder2Count;
+
+  
+
+    interrupts();
+
+  
+
+    vehiclePosition =
+
+        0.0f;
+
+  
+
+    targetVehiclePosition =
+
+        0.0f;
+
+  
+
+    positionDirectOutput =
+
+        0.0f;
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 速度Kalman + 串级速度PI初始化
+
+    // --------------------------------------------------------
+
+  
+
+    vehicleSpeed =
+
+        0.0f;
+
+  
+
+    rawVehicleSpeed =
+
+        0.0f;
+
+  
+
+    imuForwardAccelG =
+
+        0.0f;
+
+  
+
+    imuForwardAccelFilteredG =
+
+        0.0f;
+
+  
+
+    imuSpeedPredictionTrust =
+
+        1.0f;
+
+  
+
+    speedKalmanP =
+
+        1.0f;
+
+  
+
+    speedKalmanQ =
+
+        SPEED_KALMAN_Q_BASE;
+
+  
+
+    speedKalmanR =
+
+        SPEED_KALMAN_R_LOW_SPEED;
+
+  
+
+    speedError =
+
+        0.0f;
+
+  
+
+    speedIntegral =
+
+        0.0f;
+
+  
+
+    speedAngleCorrection =
+
+        0.0f;
+
+  
+
+    speedDirectOutput =
+
+        0.0f;
+
+  
+
+    speedDirectAuthority =
+
+        0.0f;
+
+  
+
+    finalBalanceOutput =
+
+        0.0f;
+
+  
+
+    targetForwardSpeed =
+
+        0.0f;
+
+  
+  
+
+    targetBalanceAngle =
+
+        balanceAngleOffset;
+
+  
+
+    outerLoopDivider =
+
+        0;
+
+  
+
+    telemetryDivider =
+
+        0;
+
+  
+
+    imuFailCount =
+
+        0;
+
+  
+
+    fallConfirmCount =
+
+        0;
+
+  
+
+    motor1ZeroHoldCount =
+
+        0;
+
+  
+
+    motor2ZeroHoldCount =
+
+        0;
+
+  
+
+    outerLoopAuthority =
+
+        1.0f;
+
+  
+
+    // 网页会忽略这一行表头
+
+    BTSerial.println(
+
+        "time_ms,fused_speed,speed_direct_hz"
+
+    );
+
+  
+  
+
+    lastControlUs =
+
+        micros();
+
+}
+
+  
+  
+
+// ============================================================
+
+// loop
+
+// 固定400Hz
+
+// ============================================================
+
+  
+
+void loop()
+
+{
+
+    uint32_t nowUs =
+
+        micros();
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 没到2.5ms就直接返回
+
+    // --------------------------------------------------------
+
+  
+
+    if (
+
+        (uint32_t)(
+
+            nowUs
+
+            -
+
+            lastControlUs
+
+        )
+
+        <
+
+        CONTROL_PERIOD_US
+
+    )
+
+    {
+
+        return;
+
+    }
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 保持固定时间基准
+
+    // --------------------------------------------------------
+
+  
+
+    lastControlUs +=
+
+        CONTROL_PERIOD_US;
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 读取BMI270
+
+    // --------------------------------------------------------
+
+  
+
+    if (
+
+        !readBMI270()
+
+    )
+
+    {
+
+        imuFailCount++;
+
+  
+
+        if (
+
+            imuFailCount
+
+            <
+
+            IMU_FAIL_CONFIRM_COUNT
+
+        )
+
+        {
+
+            // 保持上一有效STEP输出
+
+            return;
+
+        }
+
+  
+
+        stopBothMotors();
+
+  
+
+        balanceOutput =
+
+            0.0f;
+
+  
+
+        finalBalanceOutput =
+
+            0.0f;
+
+  
+
+        speedDirectOutput =
+
+            0.0f;
+
+  
+
+        speedDirectAuthority =
+
+            0.0f;
+
+  
+
+        return;
+
+    }
+
+  
+
+    imuFailCount =
+
+        0;
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // Kalman姿态
+
+    // --------------------------------------------------------
+
+  
+
+    updateAttitude();
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 多源速度Kalman预测 400Hz
+
+    //
+
+    // IMU负责快速感知“开始加速”的趋势；
+
+    // 编码器会在外环20Hz时进行绝对速度修正。
+
+    // --------------------------------------------------------
+
+  
+
+    predictVehicleSpeedKalman();
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 蓝牙遥测20Hz
+
+    // 放在倒地保护之前，这样即使触发倒地保护，
+
+    // 手机上仍能继续看到IMU/Kalman数据。
+
+    // --------------------------------------------------------
+
+  
+
+    telemetryDivider++;
+
+  
+
+    if (
+
+        telemetryDivider
+
+        >=
+
+        TELEMETRY_DIVIDER
+
+    )
+
+    {
+
+        telemetryDivider =
+
+            0;
+
+  
+
+        sendTelemetry();
+
+    }
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 倒地保护（连续确认，避免单帧尖峰突然停机）
+
+    // --------------------------------------------------------
+
+  
+
+    float fallAngleError =
+
+        fabsf(
+
+            pitch
+
+            -
+
+            balanceAngleOffset
+
+        );
+
+  
+
+    if (
+
+        fallAngleError
+
+        >=
+
+        FALL_ANGLE_DEG
+
+    )
+
+    {
+
+        fallConfirmCount++;
+
+    }
+
+    else
+
+    {
+
+        fallConfirmCount =
+
+            0;
+
+    }
+
+  
+
+    bool confirmedFall =
+
+        fallConfirmCount
+
+        >=
+
+        FALL_CONFIRM_COUNT;
+
+  
+
+    bool emergencyFall =
+
+        fallAngleError
+
+        >=
+
+        EMERGENCY_FALL_ANGLE_DEG;
+
+  
+
+    if (
+
+        confirmedFall
+
+        ||
+
+        emergencyFall
+
+    )
+
+    {
+
+        stopBothMotors();
+
+  
+
+        balanceOutput =
+
+            0.0f;
+
+  
+
+        turnOutput =
+
+            0.0f;
+
+  
+
+        speedError =
+
+            0.0f;
+
+  
+
+        speedIntegral =
+
+            0.0f;
+
+  
+
+        speedAngleCorrection =
+
+            0.0f;
+
+  
+
+        speedDirectOutput =
+
+            0.0f;
+
+  
+
+        speedDirectAuthority =
+
+            0.0f;
+
+  
+
+        finalBalanceOutput =
+
+            0.0f;
+
+  
+
+        outerLoopAuthority =
+
+            0.0f;
+
+  
+
+        motor1ZeroHoldCount =
+
+            0;
+
+  
+
+        motor2ZeroHoldCount =
+
+            0;
+
+  
+
+        targetForwardSpeed =
+
+            0.0f;
+
+  
+
+        noInterrupts();
+
+  
+
+        int32_t resetCount1 =
+
+            encoder1Count;
+
+  
+
+        int32_t resetCount2 =
+
+            encoder2Count;
+
+  
+
+        interrupts();
+
+  
+
+        lastEncoder1Count =
+
+            resetCount1;
+
+  
+
+        lastEncoder2Count =
+
+            resetCount2;
+
+  
+
+        positionZeroCount1 =
+
+            resetCount1;
+
+  
+
+        positionZeroCount2 =
+
+            resetCount2;
+
+  
+
+        vehiclePosition =
+
+            0.0f;
+
+  
+
+        positionDirectOutput =
+
+            0.0f;
+
+  
+
+        vehicleSpeed =
+
+            0.0f;
+
+  
+
+        rawVehicleSpeed =
+
+            0.0f;
+
+  
+
+        imuForwardAccelG =
+
+            0.0f;
+
+  
+
+        imuForwardAccelFilteredG =
+
+            0.0f;
+
+  
+
+        speedKalmanP =
+
+            1.0f;
+
+  
+
+        targetBalanceAngle =
+
+            balanceAngleOffset;
+
+  
+
+        return;
+
+    }
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 速度PI外环20Hz，同时计算速度P直接STEP快速阻尼
+
+    //
+
+    // 400Hz控制循环，每20次执行一次 = 50ms。
+
+    // 50ms编码器窗口用于降低低速时0/1计数跳变。
+
+    // --------------------------------------------------------
+
+  
+
+    outerLoopDivider++;
+
+  
+  
+
+    if (
+
+        outerLoopDivider
+
+        >=
+
+        20
+
+    )
+
+    {
+
+        outerLoopDivider =
+
+            0;
+
+  
+
+        updateOuterLoop();
+
+    }
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 外环权限管理400Hz
+
+    // 大角度时速度/位置环平滑退出，直立PD优先
+
+    // --------------------------------------------------------
+
+  
+
+    updateOuterLoopAuthority();
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 位置快速拉回400Hz
+
+    // --------------------------------------------------------
+
+  
+
+    updatePositionHold();
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 直立环400Hz
+
+    // --------------------------------------------------------
+
+  
+
+    updateBalanceLoop();
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 转向环400Hz
+
+    // --------------------------------------------------------
+
+  
+
+    updateTurnLoop();
+
+  
+  
+
+    // --------------------------------------------------------
+
+    // 电机合成
+
+    // --------------------------------------------------------
+
+  
+
+    float motor1Command =
+
+        finalBalanceOutput
+
+        +
+
+        turnOutput;
+
+  
+  
+
+    float motor2Command =
+
+        finalBalanceOutput
+
+        -
+
+        turnOutput;
+
+  
+  
+
+    setMotor1(
+
+        motor1Command
+
+    );
+
+  
+  
+
+    setMotor2(
+
+        motor2Command
+
+    );
+
+}

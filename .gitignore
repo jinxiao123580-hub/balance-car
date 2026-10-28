@@ -1,0 +1,46 @@
+# PlatformIO / embedded build output
+.pio/
+build/
+*.elf
+*.bin
+*.hex
+*.map
+*.o
+*.a
+
+# Python environments / cache
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local editor / OS state
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+
+# Secrets / machine-local settings (inspect other files before publishing too)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Per-machine device selection and offline vendor references
+device.local.bat
+docs/references/vendor/
+
+# Generated runtime recordings; reviewed historical raw data stays tracked
+docs/validation/recordings/*.csv.tmp
+
+# Historical media pending review of visible content and embedded metadata
+history/presentations/*.pptx
+history/media/video/*.mp4
+
+# Native CAD metadata requires review in the originating CAD application
+mechanical/cad/*.SLDASM
+mechanical/cad/*.SLDPRT

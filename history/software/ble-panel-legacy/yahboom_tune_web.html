@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>平衡车 BLE 调参面板 (Web Bluetooth)</title>
+<style>
+  :root{ --bg:#0f1419; --panel:#1b2129; --line:#2a3340; --txt:#e6edf3; --dim:#8b949e;
+         --acc:#3fb6ff; --ok:#2ea043; --bad:#f85149; --warn:#d29922; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--txt);
+        font:14px/1.5 -apple-system,Segoe UI,Roboto,"Microsoft YaHei",sans-serif; }
+  header{ padding:12px 14px; border-bottom:1px solid var(--line);
+          display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  h1{ font-size:16px; margin:0; flex:1; }
+  .btn{ background:var(--acc); color:#04141f; border:none; border-radius:8px;
+        padding:10px 16px; font-size:14px; font-weight:600; cursor:pointer; }
+  .btn:disabled{ background:var(--line); color:var(--dim); cursor:not-allowed; }
+  .btn.ghost{ background:transparent; color:var(--acc); border:1px solid var(--line); }
+  .status{ font-size:12px; color:var(--dim); padding:0 14px 8px; }
+  .status .dot{ display:inline-block; width:9px; height:9px; border-radius:50%;
+                background:var(--dim); margin-right:5px; vertical-align:middle; }
+  .status .dot.conn{ background:var(--ok); }
+  .status .dot.err{ background:var(--bad); }
+  .grid{ display:grid; grid-template-columns:1fr; gap:10px; padding:10px 14px; }
+  @media(min-width:720px){ .grid{ grid-template-columns:1fr 1fr; } .wide{ grid-column:1/-1; } }
+  .card{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  .card h2{ font-size:13px; margin:0 0 10px; color:var(--dim); font-weight:600;
+            text-transform:uppercase; letter-spacing:.05em; }
+  .row{ display:flex; align-items:center; gap:8px; margin:7px 0; }
+  .row label{ flex:0 0 150px; font-size:13px; }
+  .row input[type=range]{ flex:1; accent-color:var(--acc); height:30px; min-width:0; }
+  .row input[type=number]{ flex:0 0 84px; width:84px; text-align:right;
+        background:#0a0d11; border:1px solid var(--line); border-radius:6px;
+        padding:6px 8px; color:var(--acc); font-size:13px; font-variant-numeric:tabular-nums; }
+  .row .unit{ flex:0 0 30px; font-size:11px; color:var(--dim); }
+  .btn-sm{ background:var(--line); color:var(--txt); border:none; border-radius:6px;
+           padding:5px 10px; font-size:12px; cursor:pointer; }
+  .btn-sm.send{ background:var(--acc); color:#04141f; font-weight:600; }
+  pre#log{ height:220px; overflow:auto; background:#0a0d11; border:1px solid var(--line);
+           border-radius:8px; padding:8px; font:11px/1.4 ui-monospace,Consolas,monospace;
+           color:#9ecbff; white-space:pre-wrap; }
+  .stat-line{ display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--dim); }
+  .stat-line b{ color:var(--txt); font-weight:600; }
+  .err{ color:var(--bad); }
+  .ok{ color:var(--ok); }
+  .warn{ color:var(--warn); }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚙️ 平衡车 BLE 调参</h1>
+  <button class="btn" id="connect">连接 YahBoom</button>
+  <button class="btn ghost" id="disconnect" disabled>断开</button>
+</header>
+<div class="status"><span class="dot" id="dot"></span><span id="stat">未连接</span></div>
+
+<div class="grid">
+  <div class="card">
+    <h2>遥测</h2>
+    <div class="stat-line" id="tel"></div>
+  </div>
+
+  <div class="card">
+    <h2>直立环 (Pitch PD)</h2>
+    <div class="row"><label>balanceKp [P]</label><input type="range" id="P" min="0" max="2000" step="10"><input type="number" id="Pn"><span class="unit"></span></div>
+    <div class="row"><label>balanceKd [D]</label><input type="range" id="D" min="0" max="50" step="0.5"><input type="number" id="Dn"><span class="unit"></span></div>
+    <div class="row"><label>平衡点 [O]</label><input type="range" id="O" min="-15" max="15" step="0.5"><input type="number" id="On"><span class="unit">deg</span></div>
+    <div class="row"><label>死区 [Z]</label><input type="range" id="Z" min="0" max="5" step="0.05"><input type="number" id="Zn"><span class="unit"></span></div>
+    <div class="row"><label>输出限幅 [L]</label><input type="range" id="L" min="0" max="30000" step="500"><input type="number" id="Ln"><span class="unit">Hz</span></div>
+    <div class="row"><label>斜坡 [S]</label><input type="range" id="S" min="0" max="5000" step="100"><input type="number" id="Sn"><span class="unit">Hz/s</span></div>
+  </div>
+
+  <div class="card">
+    <h2>速度环 (Speed PI)</h2>
+    <div class="row"><label>speedKp [K]</label><input type="range" id="K" min="0" max="2" step="0.01"><input type="number" id="Kn"><span class="unit"></span></div>
+    <div class="row"><label>speedKi [I]</label><input type="range" id="I" min="0" max="2" step="0.01"><input type="number" id="In"><span class="unit"></span></div>
+    <div class="row"><label>speedDirectKp [Q]</label><input type="range" id="Q" min="0" max="50" step="0.5"><input type="number" id="Qn"><span class="unit"></span></div>
+    <div class="row"><label>positionDirectKp [A]</label><input type="range" id="A" min="0" max="50" step="0.5"><input type="number" id="An"><span class="unit"></span></div>
+    <div class="row"><label>MAX_SPEED_ANGLE [N]</label><input type="range" id="N" min="0" max="3" step="0.05"><input type="number" id="Nn"><span class="unit">deg</span></div>
+    <div class="row"><label>积分限幅 [W]</label><input type="range" id="W" min="0" max="200" step="1"><input type="number" id="Wn"><span class="unit"></span></div>
+  </div>
+
+  <div class="card">
+    <h2>转向环 (Turn)</h2>
+    <div class="row"><label>OUTER_FULL [F]</label><input type="range" id="F" min="0" max="180" step="1"><input type="number" id="Fn"><span class="unit">deg</span></div>
+    <div class="row"><label>OUTER_DISABLE [G]</label><input type="range" id="G" min="0" max="180" step="1"><input type="number" id="Gn"><span class="unit">deg</span></div>
+    <div class="row"><label>turnKp [T]</label><input type="range" id="T" min="0" max="50" step="0.5"><input type="number" id="Tn"><span class="unit"></span></div>
+    <div class="row"><label>turnKd [U]</label><input type="range" id="U" min="0" max="50" step="0.5"><input type="number" id="Un"><span class="unit"></span></div>
+  </div>
+
+  <div class="card wide">
+    <h2>命令 &amp; 日志</h2>
+    <div class="row" style="align-items:flex-start;">
+      <label style="flex:0 0 150px;">原始命令</label>
+      <input type="text" id="raw" placeholder="如 K=0.06" style="flex:1;background:#0a0d11;border:1px solid var(--line);border-radius:6px;padding:8px;color:var(--txt);">
+      <button class="btn-sm send" id="rawSend">发送</button>
+      <button class="btn-sm" id="qSend">? 回显全部</button>
+    </div>
+    <pre id="log"></pre>
+  </div>
+</div>
+
+<script>
+// ---------- BLE ----------
+const SVC='0000ffe0-0000-1000-8000-00805f9b34fb';
+const CHR='0000ffe1-0000-1000-8000-00805f9b34fb';
+let device=null, ch=null, writeMode='withoutResponse';
+const dot=document.getElementById('dot'), stat=document.getElementById('stat');
+const logEl=document.getElementById('log');
+
+function setConn(on){
+  dot.className='dot'+(on?' conn':'');
+  stat.textContent=on?('已连接 · 写入:'+writeMode+' · 10Hz 遥测'):'未连接';
+  document.getElementById('connect').disabled=on;
+  document.getElementById('disconnect').disabled=!on;
+}
+function logln(s,cls){
+  const d=new Date(); const t=d.toTimeString().slice(0,8)+'.'+String(d.getMilliseconds()).padStart(3,'0');
+  const span=document.createElement('div');
+  span.className=cls||'';
+  span.textContent=`[${t}] ${s}`;
+  logEl.appendChild(span);
+  while(logEl.children.length>400) logEl.removeChild(logEl.firstChild);
+  logEl.scrollTop=logEl.scrollHeight;
+}
+
+async function connect(){
+  if(!navigator.bluetooth){ logln('此浏览器不支持 Web Bluetooth (请用 Android Chrome / Edge)','err'); return; }
+  try{
+    logln('请求选择设备… (请在弹窗里选 YahBoom_BL)');
+    device=await navigator.bluetooth.requestDevice({
+      filters:[{services:[SVC]}],
+      optionalServices:[SVC]
+    });
+    logln('已选择: '+device.name+'  '+device.id);
+    device.addEventListener('gattserverdisconnected',()=>{ setConn(false); logln('已断开','warn'); });
+    const server=await device.gatt.connect();
+    const svc=await server.getPrimaryService(SVC);
+    ch=await svc.getCharacteristic(CHR);
+
+    // 检测特性支持的写入模式
+    const props=ch.properties;
+    if(props && props.writeWithoutResponse){ writeMode='withoutResponse'; }
+    else if(props && props.write){ writeMode='withResponse'; }
+    else { writeMode='unsupported'; }
+    logln('FFE1 特性支持: '+JSON.stringify(props),'warn');
+
+    await ch.startNotifications();
+    ch.addEventListener('characteristicvaluechanged',onData);
+    await sendCmd('?');          // 请求参数回显
+    setConn(true);
+    logln('已连接，开始接收遥测','ok');
+  }catch(e){
+    logln('连接失败: '+e.message,'err');
+  }
+}
+
+// ---------- 字节缓冲 + 按行拆分 (修复跨包乱码) ----------
+let rxBuf=new Uint8Array(0);
+function onData(ev){
+  try{
+    const dv=ev.target.value; // DataView
+    const v=new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+    // 追加到缓冲
+    const tmp=new Uint8Array(rxBuf.length+v.length);
+    tmp.set(rxBuf); tmp.set(v,rxBuf.length); rxBuf=tmp;
+    // 按 \n 拆行，保留最后不完整段
+    let start=0;
+    for(let i=0;i<rxBuf.length;i++){
+      if(rxBuf[i]===10){ // \n
+        const seg=rxBuf.slice(start,i);
+        start=i+1;
+        if(seg.length>0) handleLine(seg);
+      }
+    }
+    rxBuf=rxBuf.slice(start);
+  }catch(e){ logln('RX err: '+e.message,'err'); }
+}
+function handleLine(bytes){
+  let txt;
+  try{ txt=new TextDecoder().decode(bytes); }
+  catch(e){ txt='<不可解码 '+bytes.length+'B>'; }
+  const l=txt.trim(); if(!l) return;
+  if(l.startsWith('D,')){ parseTel(l); }
+  else logln('RX: '+l);
+}
+
+// ---------- telemetry D,ms,pitch100,gyro100,target100,balHz,spdAng100,auth1000,spdDirHz,posDirHz,finalHz,speed1000,raw1000,pos100,enc1,enc2,m1Hz,m2Hz
+let last={};
+function parseTel(l){
+  const c=l.split(',');
+  if(c.length<18) return;
+  last={ ms:+c[1], pitch:+c[2]/100, gyro:+c[3]/100, target:+c[4]/100,
+    bal:+c[5], spdAng:+c[6]/100, auth:+c[7]/1000, spdDir:+c[8], posDir:+c[9],
+    final:+c[10], speed:+c[11]/1000, raw:+c[12]/1000, pos:+c[13]/100,
+    enc1:+c[14], enc2:+c[15], m1:+c[16], m2:+c[17] };
+  const h=document.getElementById('tel');
+  h.innerHTML=
+   `pitch <b>${last.pitch.toFixed(2)}°</b> 目标 <b>${last.target.toFixed(2)}°</b>`
+   +` gyro <b>${last.gyro.toFixed(2)}</b> 直立 <b>${last.bal}Hz</b>`
+   +` 速度 <b>${last.speed.toFixed(3)}</b> 最终 <b>${last.final}Hz</b>`
+   +` M1 <b>${last.m1}Hz</b> M2 <b>${last.m2}Hz</b> enc ${last.enc1}/${last.enc2}`;
+}
+
+async function sendCmd(cmd,log=true){
+  if(!ch){ logln('未连接','err'); return; }
+  const payload=new TextEncoder().encode(cmd+'\n');
+  try{
+    if(writeMode==='withoutResponse'){
+      await ch.writeValueWithoutResponse(payload);
+    } else if(writeMode==='withResponse'){
+      await ch.writeValueWithResponse(payload);
+    } else {
+      // 未检测到支持，逐个尝试
+      try{ await ch.writeValueWithoutResponse(payload); }
+      catch(e1){ try{ await ch.writeValueWithResponse(payload); }catch(e2){ throw e2; } }
+    }
+    if(log) logln('TX: '+cmd);
+  }catch(e){ logln('TX失败('+writeMode+'): '+e.message,'err'); }
+}
+
+// ---------- 参数 滑块 + 数字输入框双向联动 ----------
+const PARAMS=[
+ ['P','balanceKp',900,0,2000,10,0], ['D','balanceKd',9,0,50,0.5,0],
+ ['O','平衡点',-2,-15,15,0.5,1], ['Z','死区',0.2,0,5,0.05,0],
+ ['L','限幅',12000,0,30000,500,0], ['S','斜坡',2000,0,5000,100,0],
+ ['K','speedKp',0.06,0,2,0.01,0], ['I','speedKi',0.12,0,2,0.01,0],
+ ['Q','speedDirectKp',5,0,50,0.5,0], ['A','positionDirectKp',0,0,50,0.5,0],
+ ['N','MAX_SPEED_ANGLE',0.5,0,3,0.05,0], ['W','积分限幅',30,0,200,1,0],
+ ['F','OUTER_FULL',90,0,180,1,0], ['G','OUTER_DISABLE',170,0,180,1,0],
+ ['T','turnKp',0,0,50,0.5,0], ['U','turnKd',0,0,50,0.5,0]
+];
+function fmt(v){ return Math.round(v*1000)/1000; }
+function setupSlider(key,val,min,max,step,isSigned){
+  const sl=document.getElementById(key), nu=document.getElementById(key+'n');
+  sl.min=min; sl.max=max; sl.step=step; sl.value=val; nu.value=fmt(+val); nu.step=step;
+  let timer=null;
+  // 滑块拖动 → 数字框实时同步 + 松手发送
+  sl.addEventListener('input',()=>{ nu.value=fmt(+sl.value); });
+  sl.addEventListener('change',()=>{ sendCmd(key+'='+fmt(+sl.value)); });
+  // 数字框输入 → 滑块同步 + 回车/失焦发送
+  nu.addEventListener('input',()=>{
+    const v=parseFloat(nu.value);
+    if(!isNaN(v)){ sl.value=Math.max(+sl.min,Math.min(+sl.max,v)); }
+  });
+  nu.addEventListener('change',()=>{
+    const v=parseFloat(nu.value);
+    if(isNaN(v)){ nu.value=fmt(+sl.value); return; }
+    sl.value=Math.max(+sl.min,Math.min(+sl.max,v));
+    nu.value=fmt(+sl.value);
+    sendCmd(key+'='+fmt(+sl.value));
+  });
+}
+PARAMS.forEach(p=>setupSlider(p[0],p[1],p[3],p[4],p[5],p[6]));
+
+document.getElementById('rawSend').addEventListener('click',()=>{
+  const v=document.getElementById('raw').value.trim();
+  if(v) sendCmd(v);
+});
+document.getElementById('qSend').addEventListener('click',()=>sendCmd('?'));
+
+document.getElementById('connect').addEventListener('click',connect);
+document.getElementById('disconnect').addEventListener('click',async()=>{
+  try{ await device.gatt.disconnect(); }catch(e){}
+  setConn(false);
+});
+</script>
+</body>
+</html>

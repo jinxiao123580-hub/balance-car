@@ -1,0 +1,26 @@
+# -*- coding: utf-8 -*-
+"""清理 main.cpp 中已删除死代码的残留蓝牙回显/命令引用"""
+p = r'software/firmware/src\main.cpp'
+c = open(p, encoding='utf-8').read()
+
+o1 = '\n        BTSerial.print(" K="); BTSerial.print(speedKp, 2);\n        BTSerial.print(" I="); BTSerial.print(speedKi, 2);'
+o2 = '\n        BTSerial.print(" N="); BTSerial.print(MAX_SPEED_ANGLE, 2);\n        BTSerial.print(" W="); BTSerial.print(SPEED_INTEGRAL_LIMIT, 2);'
+o3 = "\n        case 'K': case 'k': speedKp = val; break;\n        case 'I': case 'i': speedKi = val; break;"
+o4 = "\n        case 'N': case 'n': MAX_SPEED_ANGLE = val; break;\n        case 'W': case 'w': SPEED_INTEGRAL_LIMIT = val; break;"
+
+for name, old in [('回显K/I', o1), ('回显N/W', o2), ('case K/I', o3), ('case N/W', o4)]:
+    if old in c:
+        c = c.replace(old, '')
+        print('删', name)
+    else:
+        print('MISS', name)
+
+open(p, 'w', encoding='utf-8').write(c)
+
+import re
+for pat in ['speedKp', 'speedKi', 'MAX_SPEED_ANGLE', 'SPEED_INTEGRAL_LIMIT']:
+    print(pat, '剩', len(re.findall(pat, c)))
+print('---- 剩余所有 K= N= W= 蓝牙回显 ----')
+for i, ln in enumerate(c.split('\n'), 1):
+    if 'BTSerial.print(" K=")' in ln or 'BTSerial.print(" N=")' in ln or 'BTSerial.print(" W=")' in ln or "case 'K'" in ln or "case 'N'" in ln or "case 'W'" in ln:
+        print(f'  L{i}: {ln.strip()}')

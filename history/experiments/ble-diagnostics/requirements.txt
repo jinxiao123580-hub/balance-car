@@ -1,0 +1,3 @@
+# Reuse the panel environment; TTL serial diagnostics additionally need pyserial.
+-r ../../../software/ble-panel/requirements.txt
+pyserial>=3.5,<4
