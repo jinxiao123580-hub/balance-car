@@ -7,6 +7,14 @@
 #include <HardwareTimer.h>
 
 #include <math.h>
+#include "manual_motion.h"
+#include "position_jog.h"
+PositionOdometry positionOdom;
+PositionJog positionJog;
+PositionSpeedReference positionSpeedReference;
+PositionLeanControl positionLean;
+ManualTurnControl manualTurn;
+ManualPitchControl manualForward;
 
 // MKS TMC2209 V2.0 以独立 STEP/DIR 模式运行；不依赖 PDN_UART 启动。
 #define TMC_STANDALONE_STEP_DIR 1
@@ -994,7 +1002,15 @@ float targetVehiclePosition = 0.0f;
 float positionError = 0.0f;
 float positionSpeedTarget = 0.0f;
 bool positionHoldWasEnabled = false;
+// Shared arbitration point for future forward/reverse manual commands.
+bool positionHoldSuspended = false;
+bool manualMotionIsActive() {
+    uint32_t now = millis();
+    return manualTurn.busy(now) || manualForward.busy(now);
+}
 void captureCurrentPositionTarget();
+void stopPositionJog(int reason);
+void updatePositionHold();
 
   
   
@@ -1371,6 +1387,13 @@ float lastTurnError = 0.0f;
 
 void clearControlOutputDiagnostics()
 {
+    manualTurn.clear();
+    manualForward.clear();
+    positionJog.cancel(PositionJog::FAULT);
+    positionLean.reset();
+    positionSpeedReference.reset(); // Actual motor-stop fault only; odometry remains continuous.
+    positionHoldSuspended = false;
+    positionHoldWasEnabled = false;
     balancePOutput = 0.0f;
     balanceDOutput = 0.0f;
     balanceOutput = 0.0f;
@@ -1435,7 +1458,7 @@ uint32_t outerLoopDivider = 0;
 
   
 
-const uint32_t TELEMETRY_DIVIDER = 100;  // 400Hz/100 = 4Hz；扩展控制链遥测后仍控制在9600波特预算内
+const uint32_t TELEMETRY_DIVIDER = 200;  // 400Hz/200 = 2Hz；扩展控制链遥测后仍控制在9600波特预算内
 
 uint32_t telemetryDivider = 0;
 
@@ -3466,36 +3489,73 @@ void updateOuterLoop()
     // 4. 标准串级位置P外环：位置误差 -> 受限目标速度
     // --------------------------------------------------------
 
+    bool jogPositionControl=false;
+    if(positionJog.active){
+        int mode=(encoder1Trusted && encoder2Trusted)?0:(encoder1Trusted?1:(encoder2Trusted?2:3));
+        positionJog.update(vehiclePosition,vehicleSpeed,mode,millis(),.01f);
+        if(!positionJog.active){
+            captureCurrentPositionTarget();
+            if(positionJog.reason==PositionJog::ARRIVED){
+                targetVehiclePosition=positionJog.arrival.center;
+                positionError=targetVehiclePosition-vehiclePosition;
+            }
+        }
+        else{
+            jogPositionControl=true;
+            targetVehiclePosition=positionJog.reference;
+            positionError=targetVehiclePosition-vehiclePosition;
+            positionSpeedTarget=targetForwardSpeed=0;
+        }
+    }
+
+    if (manualForward.busy(millis())) {
+        // Direct pitch mode: track encoders, but neither speed nor position may oppose the tilt.
+        positionSpeedTarget = targetForwardSpeed = 0.0f;
+        speedError = speedIntegral = speedErrorPrev = speedErrorDotFilt = 0.0f;
+        speedPContribution = speedIContribution = 0.0f;
+        speedAngleCorrection = speedAngleUnclamped = speedAngleLimited = 0.0f;
+        return;
+    }
+
     bool positionHoldEnabled = positionKp > 0.000001f;
-    if (positionHoldEnabled && !positionHoldWasEnabled)
-    {
-        captureCurrentPositionTarget();
-        positionError = 0.0f;
-    }
-    positionHoldWasEnabled = positionHoldEnabled;
+    if(!jogPositionControl){
+        if (positionHoldEnabled && !positionHoldWasEnabled && !positionHoldSuspended)
+        {
+            captureCurrentPositionTarget();
+            positionError = 0.0f;
+        }
+        positionHoldWasEnabled = positionHoldEnabled;
 
-    if (positionHoldEnabled)
-    {
-        float effectivePositionError = positionError;
-        if (effectivePositionError > POSITION_DEADBAND_COUNT)
-            effectivePositionError -= POSITION_DEADBAND_COUNT;
-        else if (effectivePositionError < -POSITION_DEADBAND_COUNT)
-            effectivePositionError += POSITION_DEADBAND_COUNT;
+        if (positionHoldEnabled && !positionHoldSuspended)
+        {
+            float effectivePositionError = positionError;
+            if (effectivePositionError > POSITION_DEADBAND_COUNT)
+                effectivePositionError -= POSITION_DEADBAND_COUNT;
+            else if (effectivePositionError < -POSITION_DEADBAND_COUNT)
+                effectivePositionError += POSITION_DEADBAND_COUNT;
+            else
+                effectivePositionError = 0.0f;
+
+            positionSpeedTarget = positionKp * effectivePositionError;
+            if (positionSpeedTarget > MAX_POSITION_RETURN_SPEED)
+                positionSpeedTarget = MAX_POSITION_RETURN_SPEED;
+            else if (positionSpeedTarget < -MAX_POSITION_RETURN_SPEED)
+                positionSpeedTarget = -MAX_POSITION_RETURN_SPEED;
+            targetForwardSpeed = positionSpeedTarget;
+        }
         else
-            effectivePositionError = 0.0f;
+        {
+            positionSpeedTarget = 0.0f;
+            targetForwardSpeed = 0.0f;
+        }
 
-        positionSpeedTarget = positionKp * effectivePositionError;
-        if (positionSpeedTarget > MAX_POSITION_RETURN_SPEED)
-            positionSpeedTarget = MAX_POSITION_RETURN_SPEED;
-        else if (positionSpeedTarget < -MAX_POSITION_RETURN_SPEED)
-            positionSpeedTarget = -MAX_POSITION_RETURN_SPEED;
-        targetForwardSpeed = positionSpeedTarget;
-    }
-    else
-    {
-        positionSpeedTarget = 0.0f;
-        targetForwardSpeed = 0.0f;
-    }
+    } // !jogPositionControl
+    bool jogAngleControl=jogPositionControl || positionLean.busy();
+    if(jogAngleControl)positionSpeedTarget=targetForwardSpeed=0;
+    float jogDirection=speedLoopDirection*speedKp>=0 ? 1.0f : -1.0f;
+    positionLean.update(jogPositionControl ? positionError : 0,jogPositionControl,.01f,jogDirection);
+    targetForwardSpeed=positionSpeedReference.update(targetForwardSpeed,.01f);
+    if(jogPositionControl)positionSpeedTarget=targetForwardSpeed;
 
     // --------------------------------------------------------
     // 5. 总目标速度安全限幅
@@ -3584,7 +3644,7 @@ void updateOuterLoop()
     float speedDContribution = speedKd * speedErrorDotFilt;
 
     // 条件积分 + 抗饱和：禁止在外环无权限或输出继续撞向N限幅时累积。
-    if (fabsf(speedKi) < 0.000001f)
+    if (jogAngleControl || manualForward.busy(millis()) || fabsf(speedKi) < 0.000001f)
     {
         speedIntegral = 0.0f;
     }
@@ -3607,8 +3667,9 @@ void updateOuterLoop()
     }
 
     speedIContribution = speedKi * speedIntegral;
+    // Manual forward/reverse uses the operator target with P/D only; no hidden I trim.
     speedAngleUnclamped = speedLoopDirection *
-        (speedPContribution + speedIContribution + speedDContribution);
+        (speedPContribution + speedIContribution + speedDContribution) + positionLean.applied;
     float desiredSpeedAngle = speedAngleUnclamped;
 
     // 旧预测和STEP直投实验通道完全退出控制，仅保留零值遥测以兼容历史CSV。
@@ -3635,7 +3696,8 @@ void updateOuterLoop()
     // 速度环全部关闭时立即清零历史修正，保证纯直立环测试不被残留目标角污染。
     if (fabsf(speedKp) < 0.000001f && fabsf(speedKi) < 0.000001f && fabsf(speedKd) < 0.000001f)
     {
-        speedAngleCorrection = 0.0f;
+        positionLean.reset();
+            speedAngleCorrection = 0.0f;
         speedIntegral = 0.0f;
         speedPContribution = 0.0f;
         speedIContribution = 0.0f;
@@ -3788,21 +3850,11 @@ void updateOuterLoopAuthority()
 
     // 大角度时直接回到机械平衡角，让直立PD全力救车。
 
-    // 用户方案：速度环不再改目标角（只直接叠加轮速 speedDirect），
+    // Normal operation uses the speed-loop angle; held motion replaces it smoothly.
 
-    // 因此这里目标角固定 = 机械平衡角；速度PI把 speedAngleCorrection 叠加到目标角，让车倾斜以移动。
-
-    targetBalanceAngle =
-
-        balanceAngleOffset
-
-        +
-
-        outerLoopAuthority
-
-        *
-
-        speedAngleCorrection;
+    // The held angle is relative to O. No speed-loop correction is added in this mode.
+    float pitchOffset = manualForward.busy(millis()) ? manualForward.applied : manualForward.normalAuthority()*speedAngleCorrection;
+    targetBalanceAngle = balanceAngleOffset + outerLoopAuthority * pitchOffset;
 
   
   
@@ -3845,116 +3897,53 @@ void updateOuterLoopAuthority()
   
 
 void updatePositionHold()
-
 {
-
-    int32_t count1;
-
-    int32_t count2;
-
-  
-
-    noInterrupts();
-
-  
-
-    count1 =
-
-        encoder1Count;
-
-  
-
-    count2 =
-
-        encoder2Count;
-
-  
-
-    interrupts();
-
-  
-  
-
-    // 与 rawVehicleSpeed 使用同一正负约定：
-
-    // 向前 = 正，向后 = 负
-
-    vehiclePosition =
-
-        -0.5f
-
-        *
-
-        (
-
-            (float)(
-
-                count1
-
-                -
-
-                positionZeroCount1
-
-            )
-
-            +
-
-            (float)(
-
-                count2
-
-                -
-
-                positionZeroCount2
-
-            )
-
-        );
-
-  
-  
-
-    positionError =
-
-        targetVehiclePosition
-
-        -
-
-        vehiclePosition;
-
-  
-  
-
+    int32_t a,b;noInterrupts();a=encoder1Count;b=encoder2Count;interrupts();
+    int mode=(encoder1Trusted && encoder2Trusted)?0:(encoder1Trusted?1:(encoder2Trusted?2:3));
+    vehiclePosition=positionOdom.update(a,b,mode);
+    if(positionJog.active && (fabsf(pitch-balanceAngleOffset)>5 || fabsf(speedKp)<.000001f)){
+        stopPositionJog(PositionJog::FAULT);return;
+    }
+    if(positionJog.active && mode!=positionJog.source){
+        stopPositionJog(PositionJog::SOURCE_CHANGED);return;
+    }
+    // Follow actual position throughout manual tilt, return-to-O and speed-loop handoff.
+    // The parking loop must not accumulate an error against a stale pre-motion target.
+    bool followPosition=manualMotionIsActive() || manualForward.normalAuthority()<1.0f;
+    bool resume=positionHoldSuspended && !followPosition;
+    positionHoldSuspended=followPosition;
+    if(followPosition){
+        if(positionJog.active)stopPositionJog(PositionJog::STOP);
+        targetVehiclePosition=vehiclePosition;
+        positionSpeedReference.reset();
+        positionError=positionSpeedTarget=targetForwardSpeed=0;return;
+    }
+    if(resume && !positionJog.active)targetVehiclePosition=vehiclePosition;
+    if(positionJog.active)targetVehiclePosition=positionJog.reference;
+    positionError=targetVehiclePosition-vehiclePosition;
 }
 
 // 把当前位置设为新的驻车位置。用于启用位置环、跌倒恢复和面板手动重设。
 void captureCurrentPositionTarget()
 {
-    int32_t count1;
-    int32_t count2;
-    noInterrupts();
-    count1 = encoder1Count;
-    count2 = encoder2Count;
-    positionZeroCount1 = count1;
-    positionZeroCount2 = count2;
-    interrupts();
-
-    vehiclePosition = 0.0f;
-    targetVehiclePosition = 0.0f;
-    positionError = 0.0f;
-    positionSpeedTarget = 0.0f;
-    targetForwardSpeed = 0.0f;
-    speedIntegral = 0.0f;
-    speedErrorPrev = 0.0f;
-    speedErrorDotFilt = 0.0f;
-    speedAccelerationFiltered = 0.0f;
-    speedPredictionDelta = 0.0f;
-    speedPredicted = vehicleSpeed;
-    speedPredictPrevSpeed = vehicleSpeed;
+    if(positionJog.active)positionJog.cancel(PositionJog::STOP);
+    int32_t a,b;noInterrupts();a=encoder1Count;b=encoder2Count;interrupts();
+    int mode=(encoder1Trusted && encoder2Trusted)?0:(encoder1Trusted?1:(encoder2Trusted?2:3));
+    vehiclePosition=positionOdom.update(a,b,mode);
+    // Capturing a parking target never rewrites encoder counters or the odometry coordinate.
+    targetVehiclePosition=vehiclePosition;
+    positionError=positionSpeedTarget=0;
+    targetForwardSpeed=positionSpeedReference.applied;
+    speedIntegral=0;
+    speedErrorPrev=targetForwardSpeed-vehicleSpeed;
+    speedErrorDotFilt=0;
 }
 
-  
-  
+void stopPositionJog(int reason)
+{
+    positionJog.cancel(reason);
+    captureCurrentPositionTarget();
+}
 
 // ============================================================
 
@@ -4135,62 +4124,14 @@ void updateBalanceLoop()
   
 
 void updateTurnLoop()
-
 {
-
-    float turnError =
-
-        targetTurnRate
-
-        -
-
-        gyroTurnRate;
-
-  
-  
-
-    float turnDerivative =
-
-        (
-
-            turnError
-
-            -
-
-            lastTurnError
-
-        )
-
-        /
-
-        CONTROL_DT;
-
-  
-  
-
-    lastTurnError =
-
-        turnError;
-
-  
-  
-
-    turnOutput =
-
-        turnKp
-
-        *
-
-        turnError
-
-        +
-
-        turnKd
-
-        *
-
-        turnDerivative;
-
+    float turnError = targetTurnRate - gyroTurnRate;
+    float derivative = (turnError-lastTurnError) / CONTROL_DT;
+    lastTurnError = turnError;
+    float legacy = turnKp*turnError + turnKd*derivative;
+    turnOutput = manualTurn.update(millis(), CONTROL_DT,
+        pitch-balanceAngleOffset, BALANCE_OUTPUT_LIMIT_HZ,
+        finalBalanceOutput, legacy);
 }
 
   
@@ -4212,9 +4153,9 @@ void sendTelemetry()
 {
     // 完整控制链：直立P/D、目标角通道、直接制动原始/权限后、
     // 混合、总限幅、slew最终值、转向及左右电机命令。
-    char line[640];   // 48字段：理论最坏 48*12+13=589 < 640，实测约 375
+    char line[896];   // 74 numeric fields; fixed-angle rate, trajectory phase and normal-loop blend appended.
     int n = snprintf(line, sizeof(line),
-        "D,%lu,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%ld,%ld,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%lu,%d,%d,%d,%d,%d",
+        "D,%lu,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%ld,%ld,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%lu,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%lu,%d,%d,%d,%lu,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
         (unsigned long)millis(),
         (int)(pitch * 100.0f),                 // 1  Kalman倾角 *100
         (int)(gyroPitchRate * 100.0f),         // 2  角速度 *100
@@ -4263,8 +4204,25 @@ void sendTelemetry()
         (int)(telemAccPitchDevMax * 100.0f),   // 45 窗口内max|accPitch-gyroIntegAngle| *100
         (int)telemBalHzAbsMax,                 // 46 窗口内max|balanceOutput| Hz（饱和深度）
         (int)(telemKalmanBiasMin * 1000.0f),   // 47 窗口内 kalmanBias 最小值 *1000
-        (int)(telemKalmanBiasMax * 1000.0f));  // 48 窗口内 kalmanBias 最大值 *1000
-    if (n > 0)
+        (int)(telemKalmanBiasMax * 1000.0f),   // 48 窗口内 kalmanBias 最大值 *1000
+        (int)(manualForward.requested*1000.0f),
+        (int)(manualForward.applied*1000.0f),
+        0, // Reserved manualI1000: dedicated forward integrator removed.
+        (int)manualTurn.requested,
+        (int)positionHoldSuspended,
+        (manualForward.needsZero ? 1 : 0) | (manualTurn.needsZero ? 2 : 0),
+        (unsigned long)(millis()-manualForward.receivedMs),
+        5, // manualControlMode: 5=fixed +/-2deg smooth hold
+        (int)(targetVehiclePosition*100), (int)positionJog.active,
+        (unsigned long)positionJog.sequence, positionJog.reason,
+        (encoder1Trusted && encoder2Trusted)?0:(encoder1Trusted?1:(encoder2Trusted?2:3)),
+        (int)(positionJog.speed*1000),
+        (int)(positionJog.goal*100),(int)(positionJog.referenceSpeed*1000),
+        (int)(positionLean.requested*1000),(int)(positionLean.applied*1000),
+        (int)(positionJog.arrival.error*100),positionJog.arrival.goodWindows,
+        (int)(positionLean.kp*1000000),(int)(positionLean.limit*1000),
+        (int)(manualForward.rate*1000),manualForward.phase,(int)(manualForward.normalAuthority()*1000));
+    if (n > 0 && (size_t)n < sizeof(line))
         txPushLine(line, (uint16_t)n);
 
     // 窗口极值清零，开始累积下一个 250ms 窗口（必须在上面取值之后）
@@ -4651,7 +4609,7 @@ void setup()
 //   L <hz>    改 BALANCE_OUTPUT_LIMIT_HZ（输出限幅）
 //   S <hz>    改 BALANCE_OUTPUT_SLEW_HZ（每周期最大变化）
 //   ?         回显当前全部参数
-//   !         回显 TMC 只写请求状态（不是寄存器读回）
+//   !         驱动诊断；! kp,limit 配置位置倾角点动
 // ============================================================
 
 static char btCmdBuf[48];
@@ -4689,7 +4647,9 @@ void handleBtCommand(char* cmd, uint8_t len)
     while (vlen > 0 && (cmd[vlen-1] == ' ' || cmd[vlen-1] == '\r' || cmd[vlen-1] == '\n')) vlen--;
     if (key == '?') {
         prepareCommandResponse();
-        reply.print("PAR: ");
+        reply.print("PAR: TURN=2 MOVE=5 SMOOTH=1 TILTMAX=");
+        reply.print(ManualPitchControl::maxAngle, 2);
+        reply.print(" ");
         reply.print("P="); reply.print(balanceKp, 2);
         reply.print(" D="); reply.print(balanceKd, 2);
         reply.print(" O="); reply.print(balanceAngleOffset, 2);
@@ -4715,10 +4675,11 @@ void handleBtCommand(char* cmd, uint8_t len)
         reply.print(" Y="); reply.print(MAX_POSITION_RETURN_SPEED, 2);
         reply.print(" M="); reply.print(POSITION_DEADBAND_COUNT, 2);
         reply.println();
+        reply.print("JOGCFG ");reply.print(positionLean.kp,4);reply.print(' ');reply.println(positionLean.limit,3);
         return;
     }
 
-    if (key == '!') {
+    if (key == '!' && vlen == 0) {
         prepareCommandResponse();
 #if TMC_STANDALONE_STEP_DIR
         reply.println("TMC STEP/DIR standalone: hardware-selected mode");
@@ -4747,6 +4708,66 @@ void handleBtCommand(char* cmd, uint8_t len)
     for (uint8_t i = 0; i < vlen; i++) vbuf[i] = cmd[i];
     vbuf[vlen] = '\0';
 
+    if(key=='!'){
+        float kp=0,limit=0;
+        if(!parseJogConfig(vbuf,kp,limit)){reply.println("ERR:invalid jog config");return;}
+        if(positionJog.active || positionLean.busy()){reply.println("ERR:stop jog before config");return;}
+        positionLean.kp=kp;positionLean.limit=limit;
+        reply.print("JOGCFG ");reply.print(kp,4);reply.print(' ');reply.println(limit,3);
+        return;
+    }
+
+    if(key=='~' || key=='&'){
+        uint32_t id=0;float delta=0;const char* rest=nullptr;
+        if(key=='&'){
+            if(parseJogId(vbuf,id,rest) && *rest=='\0')positionJog.heartbeat(id,millis());
+            return;
+        }
+        if(!parseJogFrame(vbuf,id,delta)){reply.println("ERR:invalid jog");return;}
+        if(delta!=0){reply.println("ERR:use fixed-angle hold mode");return;}
+        if(positionJog.newer(id)){
+            if(delta!=0 && (manualMotionIsActive() || imuFailCount!=0 ||
+                fabsf(pitch-balanceAngleOffset)>5 || fabsf(speedKp)<.000001f || positionLean.kp<=0 || !(encoder1Trusted || encoder2Trusted))){
+                reply.println("ERR:jog needs upright idle vehicle");return;
+            }
+            if(delta==0){positionJog.start(id,0,vehiclePosition,rawSpeedEncoderMode,millis());captureCurrentPositionTarget();}
+            else{
+                updatePositionHold();
+                positionJog.start(id,delta,vehiclePosition,rawSpeedEncoderMode,millis());
+                targetVehiclePosition=positionJog.reference;
+                positionHoldWasEnabled=positionKp>0.000001f;
+            }
+        }
+        if(id==positionJog.sequence)positionJog.heartbeat(id,millis());
+        reply.print("JOG ");reply.print((unsigned long)positionJog.sequence);reply.print(' ');
+        reply.print((int)positionJog.active);reply.print(' ');reply.println(positionJog.reason);
+        return;
+    }
+
+    if (key == '^' || key == '@') {
+        float turn, forward;
+        if (!parseManualMotion(vbuf, turn, forward)) {
+            reply.println("ERR:invalid motion");
+            return;
+        }
+        if(key=='@' && (turn!=0 || forward!=0)){reply.println("ERR:use fixed-angle ^ command");return;}
+        if(forward!=0 && fabsf(forward)!=ManualPitchControl::maxAngle){reply.println("ERR:forward angle must be +/-2");return;}
+        if(turn!=0 && positionJog.active)stopPositionJog(PositionJog::STOP);
+        if(forward!=0 && !manualForward.busy(millis())){
+            float currentOffset=targetBalanceAngle-balanceAngleOffset;
+            if(manualForward.needsZero || imuFailCount!=0 || fabsf(pitch-balanceAngleOffset)>5 ||
+               !isfinite(currentOffset) || fabsf(currentOffset)>ManualPitchControl::maxAngle){
+                reply.println("ERR:angle hold needs upright ready vehicle");return;
+            }
+            manualForward.seed(currentOffset); // no jump from the current normal-loop target
+        }
+        uint32_t now = millis();
+        manualTurn.command(turn, now);
+        manualForward.command(forward, now);
+        reply.println("MOTION OK");
+        return;
+    }
+
     // 值必须为数字，否则忽略（防 "SAVE"/"DEF" 等非数字串被误当 key+val=0 误设）
     {
         char c0 = vbuf[0];
@@ -4769,6 +4790,11 @@ void handleBtCommand(char* cmd, uint8_t len)
         case 'R': case 'r': BALANCE_ACCEL_SCALE = fabsf(val); break;
         case 'F': case 'f': OUTER_FULL_ANGLE_DEG = val; break;
         case 'G': case 'g': OUTER_DISABLE_ANGLE_DEG = val; break;
+        case 'V': case 'v':
+            if(val!=0 && positionJog.active)stopPositionJog(PositionJog::STOP);
+            manualTurn.command(val, millis());
+            val = manualTurn.requested;
+            break;
         case 'T': case 't': turnKp = val; break;
         case 'U': case 'u': turnKd = val; break;
         case 'K': case 'k': speedKp = val; break;
@@ -4785,7 +4811,7 @@ void handleBtCommand(char* cmd, uint8_t len)
             bool wasEnabled = positionKp > 0.000001f;
             positionKp = fabsf(val);
             bool nowEnabled = positionKp > 0.000001f;
-            if (!wasEnabled && nowEnabled) captureCurrentPositionTarget();
+            if (!wasEnabled && nowEnabled && !positionHoldSuspended) captureCurrentPositionTarget();
             if (!nowEnabled) {
                 positionSpeedTarget = 0.0f;
                 targetForwardSpeed = 0.0f;
@@ -5313,6 +5339,7 @@ void loop()
     // --------------------------------------------------------
 
     // 先在400Hz读取累计位置，20Hz位置外环使用最新位置。
+    manualForward.update(millis(), CONTROL_DT, pitch-balanceAngleOffset);
     updatePositionHold();
 
     // 速度PI外环100Hz（成熟步进平衡车串级结构）

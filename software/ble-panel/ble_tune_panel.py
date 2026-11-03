@@ -79,6 +79,13 @@ TELEM_COLS = [
     "dynamicRx1000", "accelMagErrX1000", "fallStopCount",
     "gyroAbsMax100", "accPitchDevMax100", "balHzAbsMax",
     "kalmanBiasMin1000", "kalmanBiasMax1000",
+    "manualReq1000", "manualApplied1000", "manualI1000", "manualTurnReqHz",
+    "positionHoldSuspended", "manualNeedsZeroBits", "manualAgeMs", "manualControlMode",
+    "jogTarget100", "jogActive", "jogSequence", "jogReason", "positionSourceMode", "jogSpeed1000",
+    "jogGoal100", "jogReferenceSpeed1000",
+    "jogLeanReq1000", "jogLeanApplied1000", "jogMeanError100", "jogArrivalWindows",
+    "jogKp1000000", "jogLimit1000",
+    "manualAngleRate1000", "manualAnglePhase", "manualResume1000",
 ]
 
 # 参数定义: (命令字母, 变量名, 默认值, 最小, 最大, 小数位, 单位, 中文显示名)
@@ -134,6 +141,7 @@ class BleClient:
         self.conn_cb = None   # (str)->None
         self._wanted = False      # 用户期望保持连接(连接成功后置True, 主动断开置False)
         self._connecting = False  # 正在连接/重连 (防止并发)
+        self._send_lock = None
         self._rxbuf = b""     # 跨 notify 帧组装整行
 
     def start(self):
@@ -259,20 +267,27 @@ class BleClient:
                 self.recv_cb(line_s)
 
     async def send(self, text):
-        if self.client and self.client.is_connected and self.handle:
-            try:
-                await self.client.write_gatt_char(self.handle, text.encode("utf-8") + b"\n")
-                return True
-            except Exception as e:
-                if self.conn_cb: self.conn_cb(f"发送失败 {str(e)[:40]}")
-        return False
+        if self._send_lock is None:
+            self._send_lock = asyncio.Lock()
+        async with self._send_lock:
+            if self.client and self.client.is_connected and self.handle:
+                try:
+                    # Callable evaluates latest hold state after waiting for other writes.
+                    value = text() if callable(text) else text
+                    if not value:
+                        return False
+                    await self.client.write_gatt_char(self.handle, value.encode("utf-8") + b"\n")
+                    return True
+                except Exception as e:
+                    if self.conn_cb: self.conn_cb(f"发送失败 {str(e)[:40]}")
+            return False
 
 
 # ---------------- GUI ----------------
 from PyQt5.QtWidgets import (QApplication, QWidget, QGridLayout, QLabel, QLineEdit,
                              QSlider, QPushButton, QTextEdit, QVBoxLayout, QHBoxLayout,
-                             QGroupBox, QComboBox)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject
+                             QGroupBox, QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject, QTimer, QEvent
 
 
 class Bridge(QObject):
@@ -306,7 +321,24 @@ class TunePanel(QWidget):
         self._gyro_angle = 0.0                 # 陀螺积分累计角 °
         self._gyro_prev_ms = None              # 上一遥测的 ms（用于 dt）
         self._plot_timer = None
+        self._turn_value = 0
+        self._forward_value = 0
+        self._manual_requested = 0.0
+        self._manual_applied = 0.0
+        self._manual_rate = 0.0
+        self._manual_resume = 1.0
+        self._move_supported = False
+        self._turn_zero_pending = False
+        self._turn_future = None
+        self._turn_supported = False
+        self._last_telemetry = 0.0
         self.build_ui()
+        self._refresh_motion_controls()
+        QApplication.instance().installEventFilter(self)
+        self._turn_timer = QTimer(self)
+        self._turn_timer.setInterval(100)
+        self._turn_timer.timeout.connect(self.turn_tick)
+        self._turn_timer.start()
         self.bridge.text.connect(self.on_telem)
         self.bridge.msg.connect(self.on_msg)
         self.ble.recv_cb = lambda s: self.bridge.text.emit(s)
@@ -341,6 +373,53 @@ class TunePanel(QWidget):
         top.addWidget(self.btn_conn); top.addWidget(self.btn_ask)
         top.addWidget(self.btn_all); top.addWidget(self.btn_capture)
         outer.addLayout(top)
+
+        steering = QHBoxLayout()
+        self.turn_enable = QCheckBox("启用遥控（前后/转向）")
+        self.turn_enable.toggled.connect(lambda checked: self.stop_motion() if not checked else None)
+        self.turn_enable.setEnabled(False)
+        self.turn_strength = QSpinBox()
+        self.turn_strength.setRange(5, 300)
+        self.turn_strength.setValue(150)
+        self.turn_strength.setSuffix(" Hz 差速")
+        self.turn_reverse = QCheckBox("转向反向")
+        self.turn_left = QPushButton("按住左转")
+        self.turn_right = QPushButton("按住右转")
+        self.turn_stop = QPushButton("停止运动（平滑回正）")
+        for button, direction in ((self.turn_left, -1), (self.turn_right, 1)):
+            button.pressed.connect(lambda d=direction: self.start_turn(d))
+            button.released.connect(self.stop_turn)
+        self.turn_stop.clicked.connect(self.stop_motion)
+        self.turn_label = QLabel("转向未启用；首次架空确认方向")
+        for w in (self.turn_enable, self.turn_strength, self.turn_reverse,
+                  self.turn_left, self.turn_right, self.turn_stop, self.turn_label):
+            steering.addWidget(w)
+        outer.addLayout(steering)
+        driving = QHBoxLayout()
+        self.forward_strength = QDoubleSpinBox()
+        self.forward_strength.setDecimals(2)
+        self.forward_strength.setRange(2, 2)
+        self.forward_strength.setValue(2)
+        self.forward_strength.setSuffix(" ° 相对O（固定）")
+        self.forward_strength.setEnabled(False)
+        self.forward_reverse = QCheckBox("前后反向")
+        self.forward_button = QPushButton("按住前进")
+        self.backward_button = QPushButton("按住后退")
+        for button, direction in ((self.forward_button, 1), (self.backward_button, -1)):
+            button.setEnabled(False)
+            button.pressed.connect(lambda d=direction: self.start_forward(d))
+            button.released.connect(self.stop_forward)
+        for w in (QLabel("前后倾角"), self.forward_strength, self.forward_reverse,
+                  self.forward_button, self.backward_button):
+            driving.addWidget(w)
+        driving.addWidget(QLabel("按住平滑偏到O±2°；松开平滑回正"))
+        self.motion_mode_label = QLabel("车端模式：未确认")
+        driving.addWidget(self.motion_mode_label)
+        driving.addStretch()
+        outer.addLayout(driving)
+        self.jog_apply_status = QLabel("前后需固定±2°平滑固件；等待车端确认")
+        self.jog_apply_status.setWordWrap(True)
+        outer.addWidget(self.jog_apply_status)
 
         # 左右分栏：左列=参数+日志，右列=实时三线图
         hsplit = QHBoxLayout()
@@ -517,7 +596,7 @@ class TunePanel(QWidget):
         if raw_line.startswith("D,"):
             parts = raw_line.split(",")
             # 严格拒绝截断/混入确认文本的D行，避免污染后续CSV统计。
-            if len(parts) != len(TELEM_COLS) + 1:
+            if len(parts) not in (50, 57, 58, 64, 66, 72, 75):
                 return
             try:
                 for value in parts[1:]:
@@ -665,10 +744,25 @@ class TunePanel(QWidget):
 
     def on_msg(self, s):
         self.status.setText(s)
+        if ("已连接" in s and "✓" in s) or ("自动重连成功" in s):
+            self.stop_motion()
+            self.turn_enable.setChecked(False)
+            self.turn_enable.setEnabled(False)
+            self._turn_supported = False
+            self._move_supported = False
+            self.forward_button.setEnabled(False)
+            self.backward_button.setEnabled(False)
+            self.motion_mode_label.setText("车端模式：重新确认中")
+            self._last_telemetry = 0.0
+            self._manual_requested = self._manual_applied = self._manual_rate = 0.0
+            self._manual_resume = 1.0
+            self._refresh_motion_controls()
+            self.run_coro(self.ble.send("?"), "查询固件转向能力")
         # 连接成功后清空绘图缓冲：避免旧会话与当前会话的数据线接在一起。
         # 每次成功建立/重连连接都会触发 on_msg("已连接 ✓...") 或 ("自动重连成功 ✓...")
         if ("已连接" in s and "✓" in s) or ("自动重连成功" in s):
             self.clear_plot_after_connect()
+        self._refresh_motion_controls()
 
     def clear_plot_after_connect(self):
         """清空实时图缓冲并在图上复位，开启一段新的录制会话。"""
@@ -703,7 +797,22 @@ class TunePanel(QWidget):
             return
         # 解析固件 "?" 回显：PAR: P=900.00 D=9.0 O=-2.00 ... -> 同步到面板初值
         if s.startswith("PAR:"):
+            caps = s.split()
+            self._turn_supported = "TURN=1" in caps or "TURN=2" in caps
+            self._move_supported = all(cap in caps for cap in ("MOVE=5", "SMOOTH=1"))
+            self.motion_mode_label.setText("车端：固定±2°平滑模式就绪" if self._move_supported else "前后需固定±2°平滑固件；当前仅转向")
+            self.turn_strength.setMaximum(300 if "TURN=2" in caps else 100)
+            self.forward_button.setEnabled(self._move_supported)
+            self.backward_button.setEnabled(self._move_supported)
+            self.turn_enable.setEnabled(self._turn_supported)
+            if not self._turn_supported:
+                self.turn_enable.setChecked(False)
+            if not self._move_supported:
+                self._forward_value = 0
+            if not self.turn_enable.isChecked():
+                self.stop_motion()
             self.apply_param_echo(s)
+            self._refresh_motion_controls()
             return
         ack = re.fullmatch(r"([A-Za-z])=([-+]?[0-9]*\.?[0-9]+)\s+OK", s)
         if ack:
@@ -713,7 +822,16 @@ class TunePanel(QWidget):
         self.record_line(s)
         # 显示：遥测行太长，截断；回显/确认正常显示
         if s.startswith("D,"):
+            self._last_telemetry = time.monotonic()
             tail = s.split(",")
+            try:
+                if int(tail[TELEM_COLS.index("manualControlMode")+1])==5:
+                    self._manual_requested=int(tail[TELEM_COLS.index("manualReq1000")+1])/1000
+                    self._manual_applied=int(tail[TELEM_COLS.index("manualApplied1000")+1])/1000
+                    self._manual_rate=int(tail[TELEM_COLS.index("manualAngleRate1000")+1])/1000
+                    self._manual_resume=int(tail[TELEM_COLS.index("manualResume1000")+1])/1000
+            except (ValueError,IndexError):
+                pass
             show = ("遥测 " + tail[1] + "ms pitch=" + (tail[2] if len(tail) > 2 else "?")
                     + " P/D=" + (tail[5] if len(tail) > 5 else "?") + "/" + (tail[6] if len(tail) > 6 else "?")
                     + " direct=" + (tail[11] if len(tail) > 11 else "?")
@@ -721,6 +839,7 @@ class TunePanel(QWidget):
                     + (tail[14] if len(tail) > 14 else "?") + "/" + (tail[15] if len(tail) > 15 else "?"))
             self.log.append(show)
             self.push_plot(s)
+            self._refresh_motion_controls()
         elif len(s) < 200:
             self.log.append(s)
 
@@ -729,7 +848,7 @@ class TunePanel(QWidget):
         body = line[len("PAR:"):]
         found = 0
         import re
-        for m in re.finditer(r"([A-Z])=([-+]?[0-9]*\.?[0-9]+)", body):
+        for m in re.finditer(r"(?<![A-Z])([A-Z])=([-+]?[0-9]*\.?[0-9]+)", body):
             cn, vstr = m.group(1), m.group(2)
             if cn not in self.ctrl:
                 continue
@@ -887,7 +1006,91 @@ class TunePanel(QWidget):
                 self.bridge.msg.emit(f"{label}:{str(e)[:40]}")
         threading.Thread(target=runner, daemon=True).start()
 
+    def start_turn(self, direction):
+        if not (self.turn_enable.isChecked() and self._turn_supported
+                and time.monotonic()-self._last_telemetry < 1.5):
+            self.turn_label.setText("需启用转向并保持实时遥测")
+            return
+        if self.turn_reverse.isChecked(): direction = -direction
+        self._turn_value = direction*self.turn_strength.value()
+        self.turn_label.setText(f"请求差速 {self._turn_value:+d} Hz；松手回零")
+        self.turn_tick()
+
+    def _forward_ready(self):
+        return (self._move_supported and bool(self.ble.client and self.ble.client.is_connected)
+                and time.monotonic()-self._last_telemetry<1.5)
+
+    def _refresh_motion_controls(self):
+        ready=self._forward_ready()
+        self.forward_button.setEnabled(ready)
+        self.backward_button.setEnabled(ready)
+        if not self._move_supported:
+            text="前后需固定±2°平滑固件；旧位置点动不再启用"
+        elif not ready:
+            text="等待连接与实时遥测；前后请求会撤销"
+        else:
+            text=(f"固定O±2°；车端请求{self._manual_requested:+.2f}° / 平滑输出{self._manual_applied:+.3f}° / "
+                  f"变化率{self._manual_rate:+.2f}°/s；速度环恢复{self._manual_resume:.0%}")
+        self.jog_apply_status.setText(text)
+        self.jog_apply_status.setStyleSheet("color:#1565c0;" if ready else "color:#c45100;")
+
+    def start_forward(self, direction):
+        if not (self.turn_enable.isChecked() and self._forward_ready()):
+            self.turn_label.setText("需启用遥控并保持固定±2°固件的实时遥测")
+            return
+        if self.forward_reverse.isChecked(): direction=-direction
+        self._forward_value=direction*2
+        self.turn_label.setText(f"请求相对O {self._forward_value:+d}°；松开平滑回正")
+        self.turn_tick(force=True)
+
+    def stop_forward(self):
+        self._forward_value=0
+        self._turn_zero_pending=True
+        self.turn_tick(force=True)
+        self.turn_label.setText("前后倾角平滑回O，再渐渐恢复速度环")
+
+    def stop_motion(self):
+        self._forward_value=0
+        self.stop_turn()
+        self.turn_label.setText("撤销两轴请求，倾角平滑回O，直立控制继续")
+
+    def motion_command(self):
+        if self._move_supported:
+            return f"^ {self._turn_value},{self._forward_value}"
+        return f"V {self._turn_value}"
+
+    def stop_turn(self):
+        self._turn_zero_pending = True
+        self._turn_value = 0
+        self.turn_label.setText("停止转向（直立控制继续）")
+        self.turn_tick(force=True)
+
+    def turn_tick(self, force=False):
+        self._refresh_motion_controls()
+        connected = bool(self.ble.client and self.ble.client.is_connected)
+        if not connected or time.monotonic()-self._last_telemetry >= 1.5:
+            if self._forward_value or self._turn_value: self.stop_motion()
+            self._turn_value = 0
+            self._forward_value = 0
+            self.turn_enable.setChecked(False)
+        if not connected or not self.ble.loop or not self._turn_supported:
+            return
+        if self._turn_future and not self._turn_future.done(): return
+        if not self._turn_value and not self._forward_value and not force and not self._turn_zero_pending: return
+        self._turn_zero_pending = False
+        # One in-flight write; no queue of old movement commands.
+        self._turn_future = asyncio.run_coroutine_threadsafe(
+            self.ble.send(self.motion_command), self.ble.loop)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.ApplicationDeactivate:
+            self.stop_motion()
+            self.turn_enable.setChecked(False)
+        return super().eventFilter(obj, event)
+
     def closeEvent(self, _e):
+        self.stop_motion()
+        self._turn_timer.stop()
         self.close_csv()
         super().closeEvent(_e)
 
