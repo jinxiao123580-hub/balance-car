@@ -44,3 +44,6 @@ history/media/video/*.mp4
 # Native CAD metadata requires review in the originating CAD application
 mechanical/cad/*.SLDASM
 mechanical/cad/*.SLDPRT
+
+# 临时收件箱（分类后再决定是否入库）
+_inbox/

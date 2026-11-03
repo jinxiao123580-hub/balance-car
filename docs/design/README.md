@@ -3,6 +3,7 @@
 更新日期：2026-10-28，Asia/Shanghai。
 
 - [系统组成、控制结构与引脚](../system-overview.md)
+- [各部件说明（主控/IMU/驱动/电机/底盘）](components/README.md)
 - [当前默认参数](../parameters.md)
 - [当前验证状态](../validation/README.md)
 - [运行方法](../../GETTING_STARTED.md)
