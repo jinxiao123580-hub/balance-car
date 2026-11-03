@@ -47,3 +47,6 @@ mechanical/cad/*.SLDPRT
 
 # 临时收件箱（分类后再决定是否入库）
 _inbox/
+
+# 本地临时工作目录
+tmp/

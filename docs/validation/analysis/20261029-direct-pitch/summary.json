@@ -1,0 +1,14 @@
+{
+  "source": "ble_tune_log_20261029_145719_771_p29480.csv",
+  "sha256": "27D809DDBCAAC4BF4D66F9596BADA692AAE4722A51304C187B48CFADEF03137A",
+  "rows": 414,
+  "request_range": [
+    0.0,
+    0.0
+  ],
+  "applied_range": [
+    0.0,
+    0.0
+  ],
+  "conclusion": "No manual forward/reverse request or applied output observed; cannot infer that a large target was attempted."
+}

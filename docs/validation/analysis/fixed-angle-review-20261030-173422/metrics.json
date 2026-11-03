@@ -1,0 +1,111 @@
+{
+  "source": "docs/validation/recordings/ble_tune_log_20261030_173422_570_p6548.csv",
+  "sha256": "b73c19e41c7760cc9d9cee4cfe30fc7106760378e2bde2a6700d8a6318bd72be",
+  "parsed_rows": 190,
+  "complete_rows": 187,
+  "excluded_rows": 3,
+  "events": [
+    {
+      "first_data_row": 35,
+      "last_active_data_row": 37,
+      "request_deg": 2.0,
+      "first_active_ms": 41267.0,
+      "last_active_ms": 42267.0,
+      "first_zero_ms": 42767.0,
+      "peak_pitch_deg": 15.15,
+      "peak_error_deg": 13.15,
+      "peak_step_hz": 1750.0
+    },
+    {
+      "first_data_row": 50,
+      "last_active_data_row": 52,
+      "request_deg": -2.0,
+      "first_active_ms": 48767.0,
+      "last_active_ms": 49767.0,
+      "first_zero_ms": 50267.0,
+      "peak_pitch_deg": 0.0,
+      "peak_error_deg": 2.0,
+      "peak_step_hz": 434.0
+    },
+    {
+      "first_data_row": 60,
+      "last_active_data_row": 62,
+      "request_deg": -2.0,
+      "first_active_ms": 53767.0,
+      "last_active_ms": 54767.0,
+      "first_zero_ms": 55267.0,
+      "peak_pitch_deg": -0.1,
+      "peak_error_deg": 2.1,
+      "peak_step_hz": 320.0
+    },
+    {
+      "first_data_row": 70,
+      "last_active_data_row": 82,
+      "request_deg": -2.0,
+      "first_active_ms": 58767.0,
+      "last_active_ms": 64767.0,
+      "first_zero_ms": 65267.0,
+      "peak_pitch_deg": -0.33,
+      "peak_error_deg": 2.33,
+      "peak_step_hz": 637.0
+    },
+    {
+      "first_data_row": 97,
+      "last_active_data_row": 99,
+      "request_deg": 2.0,
+      "first_active_ms": 72267.0,
+      "last_active_ms": 73267.0,
+      "first_zero_ms": 73767.0,
+      "peak_pitch_deg": 42.24,
+      "peak_error_deg": 40.24,
+      "peak_step_hz": 1750.0
+    },
+    {
+      "first_data_row": 118,
+      "last_active_data_row": 130,
+      "request_deg": -2.0,
+      "first_active_ms": 82767.0,
+      "last_active_ms": 88767.0,
+      "first_zero_ms": 89267.0,
+      "peak_pitch_deg": -0.2,
+      "peak_error_deg": 2.2,
+      "peak_step_hz": 253.0
+    },
+    {
+      "first_data_row": 138,
+      "last_active_data_row": 146,
+      "request_deg": -2.0,
+      "first_active_ms": 92767.0,
+      "last_active_ms": 96767.0,
+      "first_zero_ms": 97267.0,
+      "peak_pitch_deg": -0.17,
+      "peak_error_deg": 2.17,
+      "peak_step_hz": 165.0
+    },
+    {
+      "first_data_row": 154,
+      "last_active_data_row": 160,
+      "request_deg": -2.0,
+      "first_active_ms": 100767.0,
+      "last_active_ms": 103767.0,
+      "first_zero_ms": 104267.0,
+      "peak_pitch_deg": -0.25,
+      "peak_error_deg": 2.25,
+      "peak_step_hz": 265.0
+    },
+    {
+      "first_data_row": 175,
+      "last_active_data_row": 177,
+      "request_deg": 2.0,
+      "first_active_ms": 111267.0,
+      "last_active_ms": 112267.0,
+      "first_zero_ms": 112767.0,
+      "peak_pitch_deg": 47.59,
+      "peak_error_deg": 45.59,
+      "peak_step_hz": 1750.0
+    }
+  ],
+  "handoff_upright_samples": 20,
+  "handoff_unsuspended_samples": 20,
+  "fall_stop_count_max": 0.0
+}

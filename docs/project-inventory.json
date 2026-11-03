@@ -16,8 +16,8 @@
   },
   {
     "Path": "README.md",
-    "Bytes": 5597,
-    "SHA256": "7E956BA96CB20EAC2B8440CA28939F2282B294CB4193CB60427248C11027CA14"
+    "Bytes": 5809,
+    "SHA256": "40F7482C284272C5783AB166288865520FD2118C5787D148DD0CE73F1D984F49"
   },
   {
     "Path": "build-firmware.bat",
@@ -35,14 +35,34 @@
     "SHA256": "252D3C21E6083C855A62B9B595DB538C87EE09A5857018A0DCCEFFDA479BAFD5"
   },
   {
+    "Path": "docs/design/microros-integration-research-2026-10-29.md",
+    "Bytes": 21971,
+    "SHA256": "E63F4FDF8CFF17137D8841789D3B29113B6FCC73DA55A3EAC243F45F566D4AD4"
+  },
+  {
+    "Path": "docs/design/ros-layered-options-latex/.gitignore",
+    "Bytes": 74,
+    "SHA256": "9B0B867449A702DEF3430DB25403BCA6F4972547725908EC1E95166D4F71CBDF"
+  },
+  {
+    "Path": "docs/design/ros-layered-options-latex/README.md",
+    "Bytes": 1318,
+    "SHA256": "D7A2C8E5480ECADC4E13188F45E076D95E5696D07F23EA4383E6FD4E6C998F88"
+  },
+  {
+    "Path": "docs/design/ros-layered-options-latex/main.tex",
+    "Bytes": 21367,
+    "SHA256": "46493072D6B4F6A0D16AEA89668E989C3084B5291CBFECB4E3E2C19FAAF4CD79"
+  },
+  {
     "Path": "docs/images/README.md",
     "Bytes": 685,
     "SHA256": "07E50AA47DCFA447A95EEA9DBA84D1981024A8B38FE8FE5C393A51A60A1C6869"
   },
   {
     "Path": "docs/images/ble-panel-offline.png",
-    "Bytes": 131864,
-    "SHA256": "7EE8E43DE978340790076B15358A5FB723F18D2FCFC47B2E5321554AF4D2E60C"
+    "Bytes": 157529,
+    "SHA256": "B570E8B47447225A1102AA3415CAC16C45B47E5FFC473C440670441A64BEFC00"
   },
   {
     "Path": "docs/parameters.md",
@@ -60,14 +80,109 @@
     "SHA256": "825B85A86FF7CF66436F319E84BECF2FC3663BDC77B0FEA09EDAC44238D70BFF"
   },
   {
+    "Path": "docs/research/forward-motion-reference-20261029-evidence.json",
+    "Bytes": 558,
+    "SHA256": "41DCD83429CF369B151E1B5B558330C66787378CE93C5E8CB250521CD3043CAE"
+  },
+  {
+    "Path": "docs/research/forward-motion-reference-20261029.md",
+    "Bytes": 5095,
+    "SHA256": "8541289DC9E350CB479E4F4FDB5AF1D3F5D1DEC98C4281E1CF262223234584F2"
+  },
+  {
     "Path": "docs/system-overview.md",
-    "Bytes": 2718,
-    "SHA256": "94EBB51A948D64787987F5EECB57544D9CA18E503ACE763C765BB6187BA38D0F"
+    "Bytes": 3139,
+    "SHA256": "D684FFEEDFD7AEBD7749BCB0808B412D6F8AF67B34B74CEDCD322FB541994C55"
+  },
+  {
+    "Path": "docs/turning.md",
+    "Bytes": 4784,
+    "SHA256": "1BD1E7FBCFA4547AA1C9908665E449D6F8BC8F19ADC0E3AB33CB90F6E50EF081"
   },
   {
     "Path": "docs/validation/README.md",
-    "Bytes": 1079,
-    "SHA256": "A95D5BA242112C6DF20FA5E02438A878B3756ED190446610053077A05A7A1038"
+    "Bytes": 8913,
+    "SHA256": "D7D57250FAC5DBA5DB16E77B47601417F4EE99464A3FC73EE74F4C613B67E0DA"
+  },
+  {
+    "Path": "docs/validation/analysis/20261029-direct-pitch/README.md",
+    "Bytes": 646,
+    "SHA256": "0AE431945D9379EE200FA8C76CB6AE29C2B067DA930F773E533C605871A99A03"
+  },
+  {
+    "Path": "docs/validation/analysis/20261029-direct-pitch/summary.json",
+    "Bytes": 386,
+    "SHA256": "6A38F917B0D3D5885B855EF3B0A81AEC3A34AE1942CBCE4019E08EB2D4818AAE"
+  },
+  {
+    "Path": "docs/validation/analysis/20261029-forward-target-range/README.md",
+    "Bytes": 1123,
+    "SHA256": "510899771ACFBFB8BB8366EEB95C2E91F31894AB61CF37678AD50737DF793907"
+  },
+  {
+    "Path": "docs/validation/analysis/20261029-forward-target-range/summary.json",
+    "Bytes": 755,
+    "SHA256": "D740157C2E9D53E1A17479010CF6A3371C3E5BF27FECAFB0CF49E0799EE44D35"
+  },
+  {
+    "Path": "docs/validation/analysis/20261029-manual-motion/README.md",
+    "Bytes": 3484,
+    "SHA256": "F5D0FE982DDED77893EB13B845EBAE2323CC735647473F306EEC4B2AE657E343"
+  },
+  {
+    "Path": "docs/validation/analysis/20261029-manual-motion/summary.json",
+    "Bytes": 2648,
+    "SHA256": "772FF3CA96510CB1DC1BAF6F1D2C52BEFDF6AE2D593F726DCA132E70AB70A0BF"
+  },
+  {
+    "Path": "docs/validation/analysis/20261029-manual-motion/tracking.png",
+    "Bytes": 328494,
+    "SHA256": "21784601BE3BD6BF81806266EA28EE681CB45B6DCD2942F8EC6770CFBD135B7E"
+  },
+  {
+    "Path": "docs/validation/analysis/jog-followup-20261030-094816/evidence.json",
+    "Bytes": 4931,
+    "SHA256": "101C9FEFEC8898EDFF2443E9F18AD4757AF247A6FF5B9F50B6762BBD9494F0C0"
+  },
+  {
+    "Path": "docs/validation/analysis/jog-followup-20261030-094816/report.md",
+    "Bytes": 3782,
+    "SHA256": "8B4D4DF71F44E31E34933D3730AF3B9362D37E366EF4AF806ABB5BC2AEFDE096"
+  },
+  {
+    "Path": "docs/validation/analysis/jog-followup-20261030-094816/tracking.png",
+    "Bytes": 210250,
+    "SHA256": "F79804EDA4D29D4D97BA76C2D9160F6C93423FA542F19237E275F8BB1EE0DD36"
+  },
+  {
+    "Path": "docs/validation/analysis/jog-instability-20261030/evidence.json",
+    "Bytes": 3192,
+    "SHA256": "AA8A5DF2D2460BC03C9CED243598499CEF4E2EDF62C465EC852EFD15042927E2"
+  },
+  {
+    "Path": "docs/validation/analysis/jog-instability-20261030/latest-csv.png",
+    "Bytes": 171504,
+    "SHA256": "ED89AA918125FA195EAA0ED2FA9B87BFC5EF70D364EFBD116293F74CED140B69"
+  },
+  {
+    "Path": "docs/validation/analysis/jog-instability-20261030/report.md",
+    "Bytes": 3631,
+    "SHA256": "EB92B97E674FD5CC4452690EE4D75F3433BBFECF1CE8B10FB6C2427CDFA0FCCE"
+  },
+  {
+    "Path": "docs/validation/analysis/position-authority-20261030-110500/authority-and-overshoot.png",
+    "Bytes": 270726,
+    "SHA256": "2B6F3443A918FCF8E32DB195A56E288FE9DE5A1BC3A20FBB387DC2E76AA323F9"
+  },
+  {
+    "Path": "docs/validation/analysis/position-authority-20261030-110500/evidence.json",
+    "Bytes": 11416,
+    "SHA256": "AB48368BD1E311AB5D7A4E8B762605003809DAF7F612F0E23EDE328A991E1968"
+  },
+  {
+    "Path": "docs/validation/analysis/position-authority-20261030-110500/report.md",
+    "Bytes": 5247,
+    "SHA256": "76A51E48A04713C17808ECBE04915F57AFAE372E8166B068AD8E243FDB25FF86"
   },
   {
     "Path": "docs/validation/recordings/README.md",
@@ -1155,6 +1270,26 @@
     "SHA256": "8CC6E9ACFA868A6D248A5AE71EDCADFFD58A2B37FA1B53177AD1C66CBA6137F1"
   },
   {
+    "Path": "software/analysis/analyze_jog_followup.py",
+    "Bytes": 7492,
+    "SHA256": "5932A1490C997E732DF8788705F8CC6428AE5A1A1A3956062FD1136F64246E5E"
+  },
+  {
+    "Path": "software/analysis/analyze_jog_instability.py",
+    "Bytes": 6922,
+    "SHA256": "28E1C4B8A4BD62070530AB0BC47D866A6F7DB659F6BAC1F0638568F23840CB50"
+  },
+  {
+    "Path": "software/analysis/analyze_manual_motion.py",
+    "Bytes": 4436,
+    "SHA256": "240A85F93A61F14F2C840F1D5389A4C5F031F025D8E2CCE2520C7D2F7734BD98"
+  },
+  {
+    "Path": "software/analysis/analyze_position_authority.py",
+    "Bytes": 9256,
+    "SHA256": "5F64750D847AAA4CD9D6DF2CFF6ED2A118D16F912DDECFC5D5B223E7366C6EDA"
+  },
+  {
     "Path": "software/analysis/binned_ratio.py",
     "Bytes": 5240,
     "SHA256": "7FB3182DEDBB74A97472A6663E8D9F90BF4F841B3F360D2CF67595729E5D11F0"
@@ -1171,8 +1306,8 @@
   },
   {
     "Path": "software/ble-panel/README.md",
-    "Bytes": 663,
-    "SHA256": "CE7DCE9D665BDDAB3605AB82E8A2F09F9A0271FC2D844CF2D74ADDE6741EE434"
+    "Bytes": 1486,
+    "SHA256": "23ACB744F18D1D9887774A6EE6E5FAADDF156811226775783944C1F127FB3D2F"
   },
   {
     "Path": "software/ble-panel/ble_tune_panel.bat",
@@ -1181,8 +1316,8 @@
   },
   {
     "Path": "software/ble-panel/ble_tune_panel.py",
-    "Bytes": 40232,
-    "SHA256": "EE4F60B5CE33F53E21FABB5BB8B715A097A2FEEFF97270FCF4536F92BD7BAA32"
+    "Bytes": 50939,
+    "SHA256": "93F3EAA3850206F26A95F337A0FBD7C70EE3F8243411B6BB16E89A9BA5BE9E0C"
   },
   {
     "Path": "software/ble-panel/device.local.example.bat",
@@ -1193,6 +1328,11 @@
     "Path": "software/ble-panel/requirements.txt",
     "Bytes": 47,
     "SHA256": "D6F2A56AB5F7E14CD3EADAB706D43987F6B3791EDE60EDF82FCA6E837E501710"
+  },
+  {
+    "Path": "software/ble-panel/test_turn_controls.py",
+    "Bytes": 3426,
+    "SHA256": "B9B0F140209EB6331A663D698CB1317A9B98D56DEB9AFC0BA67DEC2F3F7EE657"
   },
   {
     "Path": "software/firmware/README.md",
@@ -1216,8 +1356,23 @@
   },
   {
     "Path": "software/firmware/src/main.cpp",
-    "Bytes": 119150,
-    "SHA256": "7D155CB84F41D116D17F3692096D2B28EC13DE413B4093BB4CB900DBE99AA22B"
+    "Bytes": 127653,
+    "SHA256": "9D0C847D30E61B6D36761D6249E2712AC76402076AE8B3C9007CB79D373EFA85"
+  },
+  {
+    "Path": "software/firmware/src/manual_motion.h",
+    "Bytes": 3743,
+    "SHA256": "381E348AF3F2121781FB71141C2590A91F234AA9BB09865CC4D909DBDEE28436"
+  },
+  {
+    "Path": "software/firmware/src/manual_turn.h",
+    "Bytes": 2051,
+    "SHA256": "1EDA628AE73391D3D3081103419B1C35D2DDC19C7BDD1738DC026B8E936160AF"
+  },
+  {
+    "Path": "software/firmware/src/position_jog.h",
+    "Bytes": 6663,
+    "SHA256": "8DA7DCCD43B3C48971F9E775A0968323FE7590B9D150F1A451B8FB31884E5695"
   },
   {
     "Path": "software/firmware/test/README",
@@ -1225,8 +1380,203 @@
     "SHA256": "95291BCE496CD8B6F92AB6F9359119D77F02FC22EEC7047CC38CC818A38C2B5D"
   },
   {
+    "Path": "software/firmware/test/run_forward_regressions.py",
+    "Bytes": 5264,
+    "SHA256": "A7AFE1C1127C7CF33F0646B042AEF487D16AEA9F19792E53A48701DF2E6A6A2E"
+  },
+  {
+    "Path": "software/firmware/test/run_jog_command_regressions.py",
+    "Bytes": 2143,
+    "SHA256": "3A64C7D85895C9353AE46C3C3725E6DB50601D90CB3BF61ECE67DE8072E1DE02"
+  },
+  {
+    "Path": "software/firmware/test/run_jog_integration_regressions.py",
+    "Bytes": 4062,
+    "SHA256": "4FE7637C701DBA9FD23C3271C74D1FC8654FB6335F17EA8861BACD1C2D973655"
+  },
+  {
+    "Path": "software/firmware/test/run_jog_regressions.py",
+    "Bytes": 5906,
+    "SHA256": "F802AAE509F30203116F434006387E4C3A32788C051D31AB59B55CB858E9AD94"
+  },
+  {
     "Path": "software/firmware/test/run_motion_regressions.py",
     "Bytes": 4507,
     "SHA256": "C2A78A40D6671C8E7EE8FA5062C9F7F2C96ADC890B223E528FD9C0F4A607505F"
+  },
+  {
+    "Path": "software/firmware/test/run_position_mode_regressions.py",
+    "Bytes": 6484,
+    "SHA256": "4890D212AB7F2C8ACEB131036B4FBDFEF9865A0C4A8B74A550AB960C963ED1A0"
+  },
+  {
+    "Path": "software/firmware/test/run_turn_regressions.py",
+    "Bytes": 2365,
+    "SHA256": "AE84AE76986F6430C031BEE11745249FC4439E89748F55F304953C37BC019C9C"
+  },
+  {
+    "Path": "tmp/ros-options-document/build_options.py",
+    "Bytes": 19469,
+    "SHA256": "D9E7F7B424DD0325099F46DB7C9EDA2E7471F942FADF845E80131A8978EEAA38"
+  },
+  {
+    "Path": "tmp/ros-options-document/render/contact-sheet.png",
+    "Bytes": 711935,
+    "SHA256": "B593D60B00F983EB21D52DFAF5461F17AC49BB94962C67176D9E4A2BCB239281"
+  },
+  {
+    "Path": "tmp/ros-options-document/render/options-preview.pdf",
+    "Bytes": 484124,
+    "SHA256": "FD2A4B37864885E1EE03060331ED41539A47E1FC84FF4E20AD1CEA96BDAB88BB"
+  },
+  {
+    "Path": "tmp/ros-options-document/render/page-1.png",
+    "Bytes": 268674,
+    "SHA256": "A1B2C364EA415E64EF9B03E28B3CE6D64C85669D7B664AE9DECC95C0A4EA2F14"
+  },
+  {
+    "Path": "tmp/ros-options-document/render/page-10.png",
+    "Bytes": 303716,
+    "SHA256": "DA95DB4E5DB83E1ED23CEF12C504C4084FEBB1381EF056A7DBC7221B743C871A"
+  },
+  {
+    "Path": "tmp/ros-options-document/render/page-11.png",
+    "Bytes": 58508,
+    "SHA256": "CF6474BB17D599E5C77D8C30337B6B3C86DF37270E4966F4B0F1225B01871345"
+  },
+  {
+    "Path": "tmp/ros-options-document/render/page-2.png",
+    "Bytes": 270456,
+    "SHA256": "CCC2590FF40D3EA404115CA5CB6EEB532B2619CB4A4BF6CD84B5C2971248860F"
+  },
+  {
+    "Path": "tmp/ros-options-document/render/page-3.png",
+    "Bytes": 53842,
+    "SHA256": "4E0B062C3EF8984A9EE41B6BD0F5780A714614ED01B2E85590377C6F27A54912"
+  },
+  {
+    "Path": "tmp/ros-options-document/render/page-4.png",
+    "Bytes": 259257,
+    "SHA256": "677F25212D62642A9521725132DAB8FF8CB3935203882C72BCE01E1ADC7BA791"
+  },
+  {
+    "Path": "tmp/ros-options-document/render/page-5.png",
+    "Bytes": 40925,
+    "SHA256": "07468A0F834BEC4968B1BEE5E099DEAFB574B6D840C502DE6F925C3104408D40"
+  },
+  {
+    "Path": "tmp/ros-options-document/render/page-6.png",
+    "Bytes": 311017,
+    "SHA256": "4A97A426B4D3E65CA7751D2F1C8DA0ECA1D45886345A3E49DDB18B19E4C71CA1"
+  },
+  {
+    "Path": "tmp/ros-options-document/render/page-7.png",
+    "Bytes": 45462,
+    "SHA256": "7990BCF70C7F470CACCF12FABD775CABF0FE9F33CC2F59951218B1DA064B962F"
+  },
+  {
+    "Path": "tmp/ros-options-document/render/page-8.png",
+    "Bytes": 273907,
+    "SHA256": "EAC9D01A35077856FC5C7BC0D5431E59D789CB316CC3DC9E2EE63F690A76321F"
+  },
+  {
+    "Path": "tmp/ros-options-document/render/page-9.png",
+    "Bytes": 44153,
+    "SHA256": "48B0271F424CE78B88F4F245E47EDD3574A9C4B7859E0908702C51047212BD59"
+  },
+  {
+    "Path": "tmp/ros-options-document/render_with_wps.py",
+    "Bytes": 1607,
+    "SHA256": "08EC9079520E47A7C2A964031B2FF936E57C02D918C1B5DA9BFAD5215FD0245B"
+  },
+  {
+    "Path": "tmp/ros-options-document/superseded-word-draft/平衡车ROS分层建设与成本选型方案.docx",
+    "Bytes": 46871,
+    "SHA256": "D6AB2B2DAE8CC12FCEAABB798441120B8260256F7AAFAC87C2F76318AFF67E2B"
+  },
+  {
+    "Path": "tmp/ros-options-document/superseded-word-draft/平衡车ROS分层建设与成本选型方案.md",
+    "Bytes": 13245,
+    "SHA256": "8441D30CC8C0B07C05862B7FF6092ADCC2457D4B09BD1B060E267CF027BE5A21"
+  },
+  {
+    "Path": "software/ble-panel/test_jog_config.py",
+    "Bytes": 851,
+    "SHA256": "5324DD64D636FE96F412FAD34F29E596DDE78783145D7947AAAB2093EB504715"
+  },
+  {
+    "Path": "software/firmware/test/run_hold_command_regressions.py",
+    "Bytes": 2339,
+    "SHA256": "98FA2E24381C7D4F37B4E7CC11E0B8072541F54A30CB5711F784EBF94BBD9B16"
+  },
+  {
+    "Path": "history/software/ble-panel/2026-10-30-position-angle/ble_tune_panel.py",
+    "Bytes": 59506,
+    "SHA256": "61C321E94E2C7C4E07514D49C83CF16772B0EB61FB8BB45431B7EEEADD5EB0FA"
+  },
+  {
+    "Path": "history/software/ble-panel/2026-10-30-position-angle/README.md",
+    "Bytes": 159,
+    "SHA256": "55042B8479D36E52129E569ECB54B49C72B51BE21CB4C8A15161C38D489E4C74"
+  },
+  {
+    "Path": "history/software/ble-panel/2026-10-30-position-angle/test_jog_config.py",
+    "Bytes": 4215,
+    "SHA256": "F7D76255813DF6C4610C302CD69DFD87F1CC063E58E8E061F70AD7A49BA5C219"
+  },
+  {
+    "Path": "history/software/ble-panel/2026-10-30-position-angle/test_turn_controls.py",
+    "Bytes": 4487,
+    "SHA256": "0D0EFF28107B8D24CDD96EBA98272FF86CF7A91742FE6F8D21789AC357DB4BFB"
+  },
+  {
+    "Path": "docs/validation/analysis/fixed-angle-request-20261030-152627/metrics.json",
+    "Bytes": 2483,
+    "SHA256": "2F516575FA2DA2ED2456ACDE063B1F6B15699B36120491EAB7221CAE9F149263"
+  },
+  {
+    "Path": "docs/validation/analysis/fixed-angle-request-20261030-152627/report.md",
+    "Bytes": 2831,
+    "SHA256": "4166BD6A2E614F525D6578010BD54CCF0BD19E4AD687383B2EB3D8A232CA1230"
+  },
+  {
+    "Path": "docs/validation/recordings/ble_tune_log_20261030_173422_570_p6548.csv",
+    "Bytes": 70475,
+    "SHA256": "B73C19E41C7760CC9D9CEE4CFE30FC7106760378E2BDE2A6700D8A6318BD72BE"
+  },
+  {
+    "Path": "docs/validation/analysis/fixed-angle-review-20261030-173422/report.md",
+    "Bytes": 4329,
+    "SHA256": "05D96FBF5AFCF23FE908FE6F315BC6DE52FBC530DB23C1699E35EE3AF96F8A01"
+  },
+  {
+    "Path": "docs/validation/analysis/fixed-angle-review-20261030-173422/metrics.json",
+    "Bytes": 3085,
+    "SHA256": "0BEBF6FB21EDB7647F07C642FE88E8FC451593AD8A2204A9451D9FB24C97038C"
+  },
+  {
+    "Path": "docs/validation/recordings/ble_tune_log_20261031_101235_473_p32752.csv",
+    "Bytes": 4904528,
+    "SHA256": "C6A9A62188907E5CB9BEB52212508D303DC5CD2ADF65A8AC523D03BD220A137A"
+  },
+  {
+    "Path": "software/analysis/analyze_long_balance.py",
+    "Bytes": 3083,
+    "SHA256": "703C011F59C7A955C9AD0CEF29D2876FC2F4F252FC965F920F2D11599144F9A6"
+  },
+  {
+    "Path": "docs/validation/analysis/long-balance-20261031-101235/balance-middle.png",
+    "Bytes": 239618,
+    "SHA256": "C8C4541BB3E5489F1232E4C4026D4BA2BF172ABAF5CE4F2180547C02E264DA59"
+  },
+  {
+    "Path": "docs/validation/analysis/long-balance-20261031-101235/metrics.json",
+    "Bytes": 8066,
+    "SHA256": "5F373D1498DE415C4FA3E8A99C7DC9E5AF3597FDBDA0EBF3729886D9ED990F89"
+  },
+  {
+    "Path": "docs/validation/analysis/long-balance-20261031-101235/report.md",
+    "Bytes": 5352,
+    "SHA256": "664A79687E87FCA5B097C2BAEB00FE1AA4D0F15DE5787DF02E2A1BBD1158455E"
   }
 ]

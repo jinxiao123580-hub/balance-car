@@ -1,0 +1,237 @@
+% !TeX program = xelatex
+\documentclass[UTF8,fontset=none,a4paper,11pt]{ctexart}
+% Load local CJK font files explicitly for the desktop compiler.
+\setCJKmainfont[Path=fonts/,BoldFont=simhei.ttf,ItalicFont=simkai.ttf]{simfang.ttf}
+\setCJKsansfont[Path=fonts/]{simhei.ttf}
+\setCJKmonofont[Path=fonts/]{simfang.ttf}
+\newCJKfontfamily\docheiti[Path=fonts/]{simhei.ttf}
+\usepackage[margin=25mm]{geometry}
+\usepackage{amsmath,amssymb,booktabs,tabularx,array,longtable}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.25em}
+\linespread{1.23}
+\setlist{nosep,leftmargin=2em}
+\renewcommand{\arraystretch}{1.3}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcommand{\code}[1]{\texttt{#1}}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[C]{\small 平衡车 ROS 系统分层建设与成本选型研究}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\setlength{\headheight}{15pt}
+\ctexset{section={format=\large\bfseries},subsection={format=\normalsize\bfseries}}
+\title{\docheiti 平衡车 ROS 系统分层建设与成本选型研究}
+\author{}
+\date{2026年10月29日}
+\begin{document}
+\maketitle
+\vspace{-1.5em}
+\begin{abstract}
+针对现有 STM32F407ZG 平衡车接入 ROS 控制并扩展激光雷达与视觉感知的需求，本文提出基于现有 STM32、增加 ESP32 通信节点和增加 Linux 车载计算平台的三层建设方案，从计算任务分配、ROS 接入方式、传感器处理能力、开发复杂度与新增硬件成本等方面进行比较。分析表明，保留 STM32 与既有蓝牙链路即可通过外部计算机实现 ROS 指令控制；增加 ESP32 主要扩展无线通信与 micro-ROS 节点能力；增加 Linux 板卡则可将 ROS 主程序和选定感知算法部署于车端。以新增预算不超过 2000 元、已有激光雷达可借用且尚无深度相机为约束，建议将 STM32 与 8 GB Linux 板卡构成的分层控制系统作为扩展目标，优先完成雷达和普通 RGB 相机接入，再根据具体算法负载评估深度视觉。本文属于方案分析与预算研究，所列能力与费用仍需通过设备适配、实车试验及采购询价确认。
+\end{abstract}
+\noindent\textbf{关键词：}两轮平衡车；ROS 2；STM32；ESP32；车载计算；成本选型
+
+\section{研究背景与问题定义}
+平衡车具有不稳定倒立摆特性，其姿态控制对采样周期和执行延迟较为敏感。接入 ROS 后，系统不仅需要支持运动目标下发，还可能增加状态记录、激光建图、目标识别及路径规划等功能。因此，硬件选型应首先确定控制与感知任务的部署位置，再比较计算资源和新增成本，而不宜仅以是否具备无线功能或标称算力作为依据。
+
+本文将“ROS 控制”定义为由 ROS 节点产生运动目标，经话题通信与底盘驱动传递至车辆控制器；将“micro-ROS 接入”定义为在资源受限设备上运行相应客户端，并通过 Agent 接入 ROS 2 系统；将“车载 ROS”定义为完整 ROS 2 主程序部署于车上 Linux 计算平台。三者在体系结构和验收要求上并不等价\cite{uros_pio,uros_stm32}。
+
+研究目标是在保留现有平衡控制功能的前提下，提供可按教学要求、开发条件和预算选择的建设方案。比较范围包括功能边界、通信路径、算法部署、硬件配置和增量采购成本，不以新增模块数量作为系统先进程度的判断依据。
+
+\section{项目基础与设计约束}
+\subsection{现有硬件与软件基础}
+现有项目采用 STM32F407ZG 主控制器，以 PlatformIO 与 Arduino 框架开发，配置 BMI270 惯性传感器、两路编码器及 STEP/DIR 步进驱动接口。JDY-23 蓝牙模块接入 USART3，当前固件串口波特率为 9600 bit/s。平衡控制设计周期为 2.5 ms，即 400 Hz；速度与位置目标等外环计算以较低频率执行。STEP 边沿由 TIM2 与 TIM5 中断调度\cite{project_docs}。
+
+当前源码在控制间隔达到 5 ms 时记录超时并触发相应保护，因此新增通信、节点重建和日志处理不得直接占用平衡控制的时间预算。现有指令中的前后速度使用编码器 count/50 ms，转向量使用 STEP 差速频率，尚需转换为 ROS 通用的 m/s 与 rad/s。已有文档还记录了编码器可信通道选择和位置尺度待统一问题，可靠里程计应在相关问题修正后建立\cite{project_docs}。
+
+\subsection{建设边界与比较口径}
+本文采用以下已知条件：新增采购预算上限为人民币 2000 元；已有计算机可用于开发与调试；可借用其他车辆上的激光雷达，但其型号、二维或三维属性、接口及长期借用条件需进一步核对；现阶段没有深度相机。
+
+费用均按\textbf{新增硬件投入}计算，不重复计入现有车体、STM32、驱动器、IMU、编码器、蓝牙模块和可借用雷达。既有计算机、软件开发工时、维护成本及新购雷达费用不纳入硬件合计。各价格区间为预算估算，不构成实时商家报价或采购承诺。
+
+\subsection{任务分配原则}
+三个层次均保留 STM32 的底层控制职责。上层计算单元输出前后运动与转向目标，STM32 根据本地传感器反馈完成平衡与电机控制。外部通信中断时，应撤回过期运动目标，并依据本地状态继续平衡或进入保护，不应将通信在线状态作为直立闭环持续运行的前提。
+
+\section{系统架构的分层设计}
+\subsection{方案 A 基于现有 STM32 的基础控制系统}
+在不增加计算单元的情况下，STM32 可独立完成姿态估计、直立控制、运动目标跟踪、有限位置保持和本地保护。采用预设动作或增加简单传感器后，也可实现有限逻辑控制，但这些功能不等同于具有环境建图和路径规划能力的完整自主导航。
+
+当需要满足 ROS 控制要求时，可由外部计算机运行 ROS 2 遥控节点和底盘驱动节点。驱动节点订阅 \code{/cmd\_vel}，经单位换算与控制权仲裁，通过现有 BLE 链路或 USB 转串口向 STM32 发送指令；车端反馈则由驱动节点重新发布为 ROS 状态话题。其任务链路为：
+\begin{center}
+外部计算机 ROS 2\quad$\longleftrightarrow$\quad BLE 或有线串口\quad$\longleftrightarrow$\quad STM32。
+\end{center}
+该方案可实现 ROS 遥控、状态显示及数据记录，且无需在 STM32 上运行完整 ROS 2。若验收明确规定必须在 F407 上运行 micro-ROS，则需另行移植客户端，不能以普通协议桥接替代。
+
+\textbf{功能边界：}常规点云处理、视觉 SLAM、较大规模地图及规划任务主要由外部计算机承担。将雷达或相机接入外部计算机仍可形成分布式 ROS 系统，但车辆的相应高级功能会依赖外部计算资源和通信条件。
+
+\textbf{成本与适用性：}复用现有 BLE 时可不增加硬件；按需配置转接线、USB 转串口和安装附件，建议预留 0 至 150 元。该方案适合以最低新增成本完成 ROS 控制入口、底盘反馈与保护逻辑验证。
+
+\subsection{方案 B 基于 ESP32 的无线与嵌入式节点扩展}
+本方案增加 ESP32 开发板，通过 UART 与 STM32 连接。ESP32 处理无线收发、参数交互和通信状态，STM32 继续完成实时控制。ESP32 的具体无线能力和存储资源随型号变化，应按芯片、开发板和框架核对，不能将 ESP32 系列全部型号视为相同目标\cite{esp32}。
+
+可采用两类通信方式。第一类将 ESP32 用作普通 Wi-Fi 桥接节点，由外部计算机的 ROS 驱动负责协议转换。第二类在 ESP32 上运行 micro-ROS Client，经 Wi-Fi 或串口连接外部 Agent，使其成为 ROS 2 系统中的嵌入式节点\cite{uros_pio,uros_espidf}。第二类方式增加的是节点与通信能力，不表示 STM32 本身已运行 micro-ROS。
+
+\begin{center}
+外部计算机或 Agent\quad$\longleftrightarrow$\quad ESP32\quad$\longleftrightarrow$\quad STM32。
+\end{center}
+
+ESP32 适合承担小型网页、无线配置、状态传输及有限边缘计算。搭配适当摄像头和特定模型时，可开展低分辨率采集或轻量推理，但不宜据此将其视为可替代 Linux 计算板的常规点云与视觉建图平台。增加 ESP32 也不会直接改善原有平衡算法和机械系统性能。
+
+\textbf{成本与适用性：}开发板、稳压供电、接线及支架的新增预算约为 80 至 250 元。该方案适合 Wi-Fi 通信或嵌入式 micro-ROS 教学课题。对于最终目标为车载点云和相机处理的项目，ESP32 并非必经升级环节，可直接从方案 A 升级到方案 C。
+
+\subsection{方案 C 基于 Linux 板卡的车载 ROS 系统}
+本方案增加可运行 Linux 的计算板，将 ROS 主程序、雷达与相机驱动，以及经验证的定位、规划或视觉任务部署到车端。板卡与 STM32 采用短 UART 或 USB 转串口连接，网络主要用于远程监看、调试和数据交换。系统结构如表\ref{tab:roles}所示。
+
+\begin{table}[htbp]
+\centering
+\caption{车载 ROS 系统的任务划分}
+\label{tab:roles}
+\begin{tabularx}{\textwidth}{p{0.18\textwidth}YY}
+\toprule
+组成单元 & 主要任务 & 接口与约束\\
+\midrule
+STM32 & 姿态估计、编码器处理、平衡闭环、电机输出和本地保护 & 接收最新运动目标；不承担常规图像与点云流水线\\
+Linux 板卡 & ROS 2、传感器驱动、状态融合及选定感知与规划算法 & 直接接入相机和雷达；评估 CPU、内存与带宽\\
+外部计算机 & 开发、RViz 显示、离线分析及可选重计算 & 可通过网络连接；是否承担在线任务由部署方案确定\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+板卡与 STM32 之间可保留普通串口驱动，也可在 STM32 上移植 micro-ROS、由板卡运行 Agent。增加车载计算板与移植 micro-ROS 是独立的技术决策。既有蓝牙可继续用于维护，通常无需再增加 ESP32 中转。
+
+\textbf{功能边界：}车载完整 ROS 环境能够支持更多算法部署，但不保证任意 3D 雷达、稠密建图与多个视觉模型均可实时运行。应基于实际设备数据回放测试，必要时降低分辨率和频率，或采用车端采集与外部重计算相结合的结构。
+
+\section{功能能力与计算平台比较}
+\subsection{三层方案的能力矩阵}
+表\ref{tab:matrix}比较各方案的任务部署位置。表中“可实现”表示架构具备实施条件，不表示项目已完成相应算法或实车验证。
+
+\begin{table}[htbp]
+\centering\small
+\caption{三层方案的功能能力比较}
+\label{tab:matrix}
+\begin{tabularx}{\textwidth}{p{0.21\textwidth}YYY}
+\toprule
+比较项 & 方案 A & 方案 B & 方案 C\\
+\midrule
+本地平衡闭环 & STM32 & STM32 & STM32\\
+ROS 主程序 & 外部计算机 & 外部计算机 & 车载 Linux 板卡\\
+无线通信 & 既有 BLE & 增加 Wi-Fi 等能力 & 依据板型配置 Wi-Fi\\
+micro-ROS & 可移植至 F407，需适配 & 可部署于 ESP32，需核对型号与框架 & 车载运行 Agent，对接 MCU\\
+雷达和相机驱动 & 主要在外部计算机 & 主要在外部计算机 & 可在车端运行\\
+常规点云与视觉算法 & 主要依赖外部计算机 & 主要依赖外部计算机 & 可部署选定任务，需实测\\
+脱离外部计算机 & 保留底层与预设逻辑 & 保留底层及有限边缘逻辑 & 可独立运行已部署功能\\
+新增开发复杂度 & 低至中 & 中 & 中至高\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Linux 板卡的配置建议}
+仅运行底盘驱动与少量状态处理时，可将现代四核 ARM64、4 GB 内存及 32 至 64 GB 存储作为工程起点。对于本项目的雷达与相机组合，建议采用 8 GB 内存、64 GB 存储、USB 3.0 及主动散热；如需持续录制点云和图像，则优先评估 SSD。以上为配置建议，并非 ROS 的统一硬性最低配置。
+
+树莓派 5 提供四核 Cortex-A76、USB 3.0 和板载无线功能，官方建议高质量 5 V/5 A 供电，可作为优先评估对象\cite{pi5}。RK3588 板卡通常采用四核 Cortex-A76 加四核 Cortex-A55，可选择具有维护镜像与完整接口文档的 ROCK 5B 系列等开发板；无线、存储和供电配置必须逐板核对\cite{rock5}。
+
+RK3588 的标称 NPU 算力主要面向兼容神经网络推理，通常需要 RKNN 工具进行模型转换和部署。该资源不会自动加速一般 PCL 点云配准、任意 OpenCV 程序或所有 SLAM，不能以 TOPS 数值直接推断建图性能\cite{rknn}。若后续明确需要 CUDA 或 TensorRT，可再考虑 Jetson 等平台，但应重新核算整套成本与供电，而非仅比较裸板价格。
+
+\subsection{点云与视觉需求的区分}
+二维激光雷达提供平面扫描，可用于二维建图和导航；将扫描转换为 PointCloud2 格式并不会产生新的三维测量信息。普通 RGB 相机提供图像，可用于标记识别、目标检测与跟随，但自身不能直接输出真实深度。
+
+若目标为 RGB-D 三维建图或彩色点云，应增加深度相机、经标定的立体视觉系统，或进行相机与三维雷达融合。已有雷达的型号与数据形式将直接影响硬件配置。深度相机采购需逐型号核对 ARM64、ROS 发行版、固件和 USB 条件，官方驱动存在并不意味着同品牌全部旧型号均适用\cite{orbbec}。
+
+\section{新增硬件成本与预算配置}
+\subsection{三层方案的费用估算}
+表\ref{tab:cost}按同一增量口径给出费用区间。其中方案 C 包含普通 RGB 相机，不包含深度相机和新购雷达。价格随配置、渠道和时间变化，实施前应获取完整套件报价。树莓派已发布价格调整公告，不能将早期首发价格直接作为当前采购依据\cite{pi_price}。
+
+\begin{table}[htbp]
+\centering
+\caption{新增硬件成本估算}
+\label{tab:cost}
+\begin{tabularx}{\textwidth}{p{0.17\textwidth}Yp{0.2\textwidth}}
+\toprule
+方案 & 新增硬件范围 & 估算金额 人民币\\
+\midrule
+A & 按需增加串口转接、线材与安装附件 & 0 至 150 元\\
+B & ESP32 开发板、稳压供电、接线与支架 & 80 至 250 元\\
+C & Linux 板卡、存储、散热、电源、普通 RGB 相机与连接附件 & 1200 至 2400 元\\
+深度视觉扩展 & RGB-D 或立体相机及必要配套 & 按型号另行询价\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+方案 A 的低硬件投入不表示软件工作量为零，仍需完成 ROS 驱动、标定和故障处理。方案 B 还增加双 MCU 协议、配网和版本维护。方案 C 则进一步涉及系统镜像、传感器驱动、坐标变换、算法部署及热设计，开发与调试成本通常高于基础桥接方案。
+
+\subsection{2000 元预算的分配建议}
+在可复用现有雷达的条件下，可按表\ref{tab:budget}控制采购上限。该表表示预算分配目标，不代表已经取得对应报价。若计算板超过分项额度，应比较替代板型或调整配置，而不应取消必要供电与散热。
+
+\begin{table}[htbp]
+\centering
+\caption{新增预算 2000 元的配置分配}
+\label{tab:budget}
+\begin{tabularx}{\textwidth}{p{0.28\textwidth}rY}
+\toprule
+采购项目 & 控制额度 元 & 选择说明\\
+\midrule
+8 GB Linux 计算板 & 1100 & 比较树莓派 5 与维护情况明确的 RK3588 开发板\\
+系统存储 & 100 & 满足系统与少量数据，持续录包再评估扩容\\
+主动散热 & 70 & 与板卡及安装空间匹配\\
+车载供电 & 200 & 降压、线材和保护，核对电池及供电协议\\
+普通 USB 相机 & 150 & 优先选择 Linux UVC 支持可验证的型号\\
+串口转接与线材 & 80 & 连接车载板与 STM32\\
+支架与无线附件 & 100 & 部分 RK3588 板型需单独配置无线模块\\
+调整预留 & 200 & 用于报价差额、接口与安装变化\\
+\midrule
+总额 & 2000 & 不含新购雷达或深度相机\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+在该预算内，建议优先建立“STM32 加 Linux 板卡加现有雷达加普通相机”的系统。若既有雷达不能借用，或验收明确要求深度相机与三维重建，则预算前提发生变化，需要重新配置资金，而不宜沿用同一预算承诺。
+
+\section{实施路径与验证要求}
+\subsection{按照验收目标选择方案}
+若目标是展示 ROS 话题控制、车辆反馈与数据记录，方案 A 已具备相应架构条件。若课题重点是 Wi-Fi、micro-ROS 节点和多控制器通信，则方案 B 更有针对性。若要求雷达、相机和选定导航算法在车上运行，则应采用方案 C。
+
+“使用 micro-ROS”还应明确客户端部署位置。ESP32 运行客户端不能替代“必须在 F407 上运行”的要求；反之，老师若仅要求 ROS 控制，也不必将 MCU 移植作为前置条件。可据此分别制定节点发现、发布订阅与控制时序的验收内容。
+
+\subsection{指令接口与标定}
+建议 ROS 上层使用 \code{/cmd\_vel} 表达前后速度和转向角速度，并在底盘驱动中换算为当前控制器使用的单位。令 $r$ 为轮半径，$b$ 为两轮中心距，$C$ 为当前编码器计数方式下每轮一周的计数，$S$ 为每轮一周所需 STEP 脉冲数，$v$ 为目标线速度，则前后目标可写为
+\begin{equation}
+q_v=\frac{vC\Delta t}{2\pi r},\qquad \Delta t=0.05\ \mathrm{s}.
+\label{eq:linear}
+\end{equation}
+其中 $q_v$ 的单位为 count/50 ms。在理想无滑移差速运动下，目标角速度 $\omega$ 对应的每轮转向差速频率大小为
+\begin{equation}
+f_{\Delta}=\frac{\omega bS}{4\pi r}.
+\label{eq:angular}
+\end{equation}
+式\eqref{eq:linear}和式\eqref{eq:angular}给出几何换算关系，不代表现有开环转向已具备角速度闭环精度。实际正负号、轮序、细分和计数倍率应经实车确认，并继续服从原控制器的限幅、变化率和姿态权限。
+
+\subsection{分阶段验证}
+首先，在现有硬件上验证 ROS 指令与反馈链路，包括单位、方向、命令新鲜度和控制权切换。随后安装选定扩展单元，验证断连、重连和通信拥堵情况下本地控制仍能按时运行。最后接入雷达与相机，利用真实数据回放评估 CPU、内存、温度、掉帧和通信负载，再确定算法部署位置。
+
+平衡车的俯仰运动会改变相机姿态和雷达扫描平面，应统一测量时间戳、传感器外参与坐标变换。二维扫描倾斜造成的空间采样变化不能仅通过坐标变换完全消除。新增板卡、相机、雷达和支架还会改变质量及重心，需要重新验证供电压降、执行器余量和运动稳定性。
+
+\section{结论}
+现有 STM32 可承担平衡车的实时控制，通过外部 ROS 驱动与既有蓝牙链路即可形成 ROS 控制入口。ESP32 的主要价值在于无线通信与嵌入式节点扩展，适合相应教学任务，但不足以替代常规点云和视觉算法所需的 Linux 车载平台。增加 Linux 板卡后，系统可形成底层控制与上层感知规划分工明确的车载 ROS 架构。
+
+对于新增预算 2000 元且已有雷达可借用的条件，建议以方案 C 为扩展目标，优先评估 8 GB 树莓派 5；在完整套件价格更合适且驱动支持明确时，可选择 RK3588 开发板。实施时先完成方案 A 的控制与反馈验证，再接入板卡、雷达和普通 RGB 相机，不要求先增加 ESP32。深度视觉和高负载三维处理应在雷达型号、算法任务与实际资源需求明确后另行决策。
+
+\begin{thebibliography}{99}
+\small
+\bibitem{project_docs} 平衡车项目资料. 当前固件配置与源码及系统设计说明[Z]. \code{software/firmware/platformio.ini}，\code{src/main.cpp}，\code{docs/system-overview.md}，\code{docs/turning.md}. 2026.
+\bibitem{uros_pio} micro-ROS. micro-ROS for PlatformIO[EB/OL]. \url{https://github.com/micro-ROS/micro_ros_platformio}. 查阅日期：2026-10-29.
+\bibitem{uros_stm32} micro-ROS. STM32CubeMX integration utilities[EB/OL]. \url{https://github.com/micro-ROS/micro_ros_stm32cubemx_utils}. 查阅日期：2026-10-29.
+\bibitem{esp32} Espressif Systems. ESP32-S3 product resources[EB/OL]. \url{https://www.espressif.com/en/products/socs/esp32-s3}. 查阅日期：2026-10-29.
+\bibitem{uros_espidf} micro-ROS. ESP-IDF component[EB/OL]. \url{https://github.com/micro-ROS/micro_ros_espidf_component}. 查阅日期：2026-10-29.
+\bibitem{pi5} Raspberry Pi. Raspberry Pi 5 product specifications[EB/OL]. \url{https://www.raspberrypi.com/products/raspberry-pi-5/}. 查阅日期：2026-10-29.
+\bibitem{rock5} Radxa. ROCK 5B product introduction[EB/OL]. \url{https://docs.radxa.com/en/rock5/rock5b/getting-started/introduction}. 查阅日期：2026-10-29.
+\bibitem{rknn} Rockchip. RKNN-Toolkit2[EB/OL]. \url{https://github.com/airockchip/rknn-toolkit2}. 查阅日期：2026-10-29.
+\bibitem{orbbec} Orbbec. OrbbecSDK ROS2 wrapper[EB/OL]. \url{https://github.com/orbbec/OrbbecSDK_ROS2}. 查阅日期：2026-10-29.
+\bibitem{pi_price} Raspberry Pi. Price increases for 2GB Raspberry Pi 4 and Raspberry Pi 5[EB/OL]. 2026-10-01. \url{https://www.raspberrypi.com/news/price-increases-for-2gb-raspberry-pi-4-and-raspberry-pi-5/}. 查阅日期：2026-10-29.
+\end{thebibliography}
+\end{document}
+
+

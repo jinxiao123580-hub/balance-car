@@ -1,0 +1,106 @@
+[
+  {
+    "source": "docs/validation/recordings/ble_tune_log_20261030_152457_452_p29240.csv",
+    "sha256": "05f7ec990b57a181f657a7971dcb49b19b31d9db59ffedbf81360a6000f92958",
+    "complete_rows": 44,
+    "configs": [
+      {
+        "kp": 0.005,
+        "limit": 0.3,
+        "samples": 44
+      }
+    ],
+    "O_samples": {
+      "4.0": 28,
+      "2.0": 16
+    },
+    "tasks": []
+  },
+  {
+    "source": "docs/validation/recordings/ble_tune_log_20261030_152627_943_p29240.csv",
+    "sha256": "386e9ae9b239d0f801a053d575aaacaf094ba2d0830d76e468f8ba4ec4a269a2",
+    "complete_rows": 363,
+    "configs": [
+      {
+        "kp": 0.005,
+        "limit": 0.3,
+        "samples": 12
+      },
+      {
+        "kp": 0.005,
+        "limit": 0.5,
+        "samples": 351
+      }
+    ],
+    "O_samples": {
+      "2.0": 285,
+      "0.0": 34,
+      "-1.0": 20,
+      "5.0": 7,
+      "3.0": 11,
+      "4.0": 6
+    },
+    "tasks": [
+      {
+        "sequence": "2343734444",
+        "active_samples": 24,
+        "last_reason": 7,
+        "goal": 1694.0,
+        "pos_first": 1628.0,
+        "pos_last": 1746.0,
+        "lean_min": -0.19,
+        "lean_max": 0.221
+      },
+      {
+        "sequence": "2343734445",
+        "active_samples": 24,
+        "last_reason": 7,
+        "goal": 2001.0,
+        "pos_first": 2060.0,
+        "pos_last": 2129.0,
+        "lean_min": -0.5,
+        "lean_max": -0.011
+      },
+      {
+        "sequence": "2343734446",
+        "active_samples": 13,
+        "last_reason": 2,
+        "goal": 2161.0,
+        "pos_first": 2169.0,
+        "pos_last": 2174.0,
+        "lean_min": -0.075,
+        "lean_max": 0.028
+      },
+      {
+        "sequence": "2343734447",
+        "active_samples": 24,
+        "last_reason": 7,
+        "goal": 2238.0,
+        "pos_first": 2180.0,
+        "pos_last": 2196.0,
+        "lean_min": -0.021,
+        "lean_max": 0.21
+      },
+      {
+        "sequence": "2343734448",
+        "active_samples": 24,
+        "last_reason": 7,
+        "goal": 2204.0,
+        "pos_first": 2257.0,
+        "pos_last": 2232.0,
+        "lean_min": -0.202,
+        "lean_max": -0.025
+      },
+      {
+        "sequence": "2343734449",
+        "active_samples": 24,
+        "last_reason": 7,
+        "goal": 2315.0,
+        "pos_first": 2272.0,
+        "pos_last": 2169.0,
+        "lean_min": -0.024,
+        "lean_max": 0.217
+      }
+    ]
+  }
+]

@@ -1,0 +1,20 @@
+{
+  "source": "ble_tune_log_20261029_182546_662_p28652.csv",
+  "sha256": "010C40D0DD4DC8E7F76C920DCF23E6E75C0FEFCA25B0EF1ECAF94B86E5975DE1",
+  "rows": 122,
+  "manualControlMode": [
+    3.0
+  ],
+  "request_range": [
+    0.0,
+    0.0
+  ],
+  "applied_range": [
+    0.0,
+    0.0
+  ],
+  "bt_baud": 9600,
+  "estimated_data_bytes_per_second": 842.7540983606557,
+  "ideal_uart_8n1_capacity_bytes_per_second": 960,
+  "limit": "All-zero sampled requests do not exclude very brief unsampled events; no verified nonzero 2-degree test in this CSV."
+}

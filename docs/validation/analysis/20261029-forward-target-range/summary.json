@@ -1,0 +1,42 @@
+[
+  {
+    "source": "ble_tune_log_20261029_143827_401_p32036.csv",
+    "sha256": "54B7A2FDA95B9F877FB0F472EDCF7674C6F10C270405B35616C6BADD74D14A8F",
+    "rows": 492,
+    "request_range": [
+      -8.0,
+      8.0
+    ],
+    "manual_I_range_deg": [
+      -0.5,
+      0.257
+    ],
+    "global_I": [
+      0.0
+    ],
+    "N": [
+      2.0
+    ]
+  },
+  {
+    "source": "ble_tune_log_20261029_144143_250_p32036.csv",
+    "sha256": "57D0D4AD5C5E574FB437827D85043796B7774E8BD5F0BC1EEC08721CAFD1020B",
+    "rows": 251,
+    "request_range": [
+      -8.0,
+      8.0
+    ],
+    "manual_I_range_deg": [
+      -0.335,
+      0.038
+    ],
+    "global_I": [
+      0.0,
+      0.01
+    ],
+    "N": [
+      2.0,
+      10.0
+    ]
+  }
+]

@@ -1,0 +1,130 @@
+[
+  {
+    "path": "docs/validation/recordings/ble_tune_log_20261030_091818_468_p35352.csv",
+    "sha256": "6c4ae4d24c24390d7e0357eab6910843750300c999a5eb908bf39e4d8b06e51f",
+    "rows": 128,
+    "incomplete_rows": 3,
+    "tasks": [
+      {
+        "sequence": 2321735571,
+        "first_ms": 38403.0,
+        "last_active_ms": 39403.0,
+        "speed_min": -10.848,
+        "speed_max": 24.639,
+        "max_goal_error": 242.0,
+        "last_reason": 1
+      },
+      {
+        "sequence": 2321735572,
+        "first_ms": 39903.0,
+        "last_active_ms": 40403.0,
+        "speed_min": -55.111,
+        "speed_max": -12.321,
+        "max_goal_error": 535.0,
+        "last_reason": 6
+      },
+      {
+        "sequence": 2321735573,
+        "first_ms": 43403.0,
+        "last_active_ms": 47403.0,
+        "speed_min": -18.167,
+        "speed_max": 31.084,
+        "max_goal_error": 520.0,
+        "last_reason": 6
+      },
+      {
+        "sequence": 2321735574,
+        "first_ms": 58903.0,
+        "last_active_ms": 64403.0,
+        "speed_min": -22.404,
+        "speed_max": 28.133,
+        "max_goal_error": 569.0,
+        "last_reason": 6
+      },
+      {
+        "sequence": 2321735575,
+        "first_ms": 70903.0,
+        "last_active_ms": 74903.0,
+        "speed_min": -27.874,
+        "speed_max": 38.726,
+        "max_goal_error": 331.0,
+        "last_reason": 6
+      }
+    ],
+    "coordinate_shifts": [
+      {
+        "ms": 15903.0,
+        "coordinate_shift": -111.5
+      },
+      {
+        "ms": 16403.0,
+        "coordinate_shift": 29.0
+      },
+      {
+        "ms": 40903.0,
+        "coordinate_shift": -293.0
+      },
+      {
+        "ms": 47903.0,
+        "coordinate_shift": 32.0
+      },
+      {
+        "ms": 64903.0,
+        "coordinate_shift": 31.0
+      },
+      {
+        "ms": 75403.0,
+        "coordinate_shift": 79.0
+      }
+    ]
+  },
+  {
+    "path": "docs/validation/recordings/ble_tune_log_20261030_091958_949_p35352.csv",
+    "sha256": "5485265cedf0ff2cc74196f1b6dbbcd0da795b39545c78b475cacfad3f41906c",
+    "rows": 86,
+    "incomplete_rows": 0,
+    "tasks": [
+      {
+        "sequence": 2321735576,
+        "first_ms": 88903.0,
+        "last_active_ms": 91903.0,
+        "speed_min": -28.578,
+        "speed_max": 26.298,
+        "max_goal_error": 318.0,
+        "last_reason": 6
+      },
+      {
+        "sequence": 2321735577,
+        "first_ms": 100403.0,
+        "last_active_ms": 104403.0,
+        "speed_min": -28.113,
+        "speed_max": 33.981,
+        "max_goal_error": 305.0,
+        "last_reason": 6
+      },
+      {
+        "sequence": 2321735578,
+        "first_ms": 107903.0,
+        "last_active_ms": 110903.0,
+        "speed_min": -25.926,
+        "speed_max": 48.42,
+        "max_goal_error": 314.0,
+        "last_reason": 6
+      }
+    ],
+    "coordinate_shifts": [
+      {
+        "ms": 92403.0,
+        "coordinate_shift": -1074.0
+      },
+      {
+        "ms": 104903.0,
+        "coordinate_shift": 804.0
+      },
+      {
+        "ms": 111403.0,
+        "coordinate_shift": -1184.0
+      }
+    ]
+  }
+]

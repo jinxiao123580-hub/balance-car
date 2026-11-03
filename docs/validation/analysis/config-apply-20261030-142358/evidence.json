@@ -1,0 +1,13 @@
+{
+  "source": "ble_tune_log_20261030_142358_463_p28076.csv",
+  "sha256": "0aefdc0e0bd50a54734e6a0fe2aedd0d6656065672b2012a1735219c08ce420d",
+  "rows": 229,
+  "actual_kp": 0.005,
+  "actual_limit_degrees": 0.3,
+  "observed_ui_inputs": {
+    "kp": 0.02,
+    "limit": 0.5
+  },
+  "device_power": "User confirmed powered off before repair",
+  "firmware_changed": false
+}

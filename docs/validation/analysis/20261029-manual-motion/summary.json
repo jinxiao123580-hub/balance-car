@@ -1,0 +1,108 @@
+{
+  "source": "ble_tune_log_20261029_095731_224_p22200.csv",
+  "source_sha256": "D594C3EA4D3E86AE994DAB108E37C1AD45CA94814DD0166647DE6F843BFFF472",
+  "source_bytes": 83995,
+  "rows": 272,
+  "rejected_rows": 0,
+  "mcu_start_s": 19.107,
+  "mcu_end_s": 86.857,
+  "reconstructed_reference_range": [
+    -8.0,
+    8.0
+  ],
+  "actual_speed_range": [
+    -11.653,
+    9.801
+  ],
+  "correction_range_deg": [
+    -0.22,
+    0.31
+  ],
+  "outer_authority_range": [
+    1.0,
+    1.0
+  ],
+  "fall_stop_range": [
+    0.0,
+    0.0
+  ],
+  "speed_K": [
+    -0.02
+  ],
+  "speed_I": [
+    0.0
+  ],
+  "plateaus": [
+    {
+      "target": 4,
+      "O": 6.0,
+      "N": 2.0,
+      "start": 34.107,
+      "end": 36.607,
+      "samples": 11,
+      "mean_speed": -0.5984545454545456,
+      "mean_correction_deg": 0.09,
+      "mean_relative_pitch_deg": 0.06000000000000001,
+      "enc1_delta": 25.0,
+      "enc2_delta": 21.0,
+      "encoder_net_speed": -0.4600000000000001
+    },
+    {
+      "target": 4,
+      "O": 6.0,
+      "N": 2.0,
+      "start": 37.857,
+      "end": 38.357,
+      "samples": 3,
+      "mean_speed": -0.4586666666666665,
+      "mean_correction_deg": 0.09,
+      "mean_relative_pitch_deg": -0.016666666666666607,
+      "enc1_delta": 43.0,
+      "enc2_delta": 44.0,
+      "encoder_net_speed": -4.3500000000000005
+    },
+    {
+      "target": -8,
+      "O": 6.0,
+      "N": 2.0,
+      "start": 45.357,
+      "end": 47.357,
+      "samples": 9,
+      "mean_speed": 0.2632222222222223,
+      "mean_correction_deg": -0.16,
+      "mean_relative_pitch_deg": -0.1555555555555554,
+      "enc1_delta": -11.0,
+      "enc2_delta": -11.0,
+      "encoder_net_speed": 0.275
+    },
+    {
+      "target": 8,
+      "O": 6.0,
+      "N": 2.0,
+      "start": 51.607,
+      "end": 57.857,
+      "samples": 26,
+      "mean_speed": 0.05823076923076923,
+      "mean_correction_deg": 0.15384615384615385,
+      "mean_relative_pitch_deg": 0.1588461538461539,
+      "enc1_delta": -20.0,
+      "enc2_delta": -20.0,
+      "encoder_net_speed": 0.16
+    },
+    {
+      "target": 8,
+      "O": 6.0,
+      "N": 2.0,
+      "start": 58.857,
+      "end": 59.357,
+      "samples": 3,
+      "mean_speed": 0.7326666666666667,
+      "mean_correction_deg": 0.14,
+      "mean_relative_pitch_deg": 0.27666666666666667,
+      "enc1_delta": -31.0,
+      "enc2_delta": -32.0,
+      "encoder_net_speed": 3.1500000000000004
+    }
+  ],
+  "limitation": "Reference reconstructed from speed error + measured speed; CSV does not record raw button state, applied manual speed or timeout/rearm flags."
+}
