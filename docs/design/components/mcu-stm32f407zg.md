@@ -20,8 +20,10 @@
 
 本项目的实际引脚分配见 [`../../system-overview.md`](../../system-overview.md)，摘要：
 
-- Motor1：PA6 STEP（TIM3_CH1）/ PA7 DIR
-- Motor2：PA8 STEP（TIM1_CH1）/ PB0 DIR
+- Motor1：PA6 STEP / PA7 DIR —— STEP 由 **TIM2**（32 位）边沿中断调度
+- Motor2：PA8 STEP / PB0 DIR —— STEP 由 **TIM5**（32 位）边沿中断调度
+
+> 固件引脚宏注释里仍写着 `TIM3_CH1` / `TIM1_CH1`，那是旧版 PWM 机制的遗留注释；2026-10 起实际用的是 TIM2 / TIM5，见 `main.cpp` 的 `HardwareTimer motor1Timer(TIM2)` / `motor2Timer(TIM5)`。
 - BMI270：PB8 SCL / PB9 SDA
 - 编码器 1：PA0/PA1；编码器 2：PB6/PB7
 - 蓝牙 USART3：PB10 TX / PB11 RX
