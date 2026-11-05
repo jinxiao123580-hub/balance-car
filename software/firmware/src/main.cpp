@@ -9,8 +9,13 @@
 #include <math.h>
 #include "manual_motion.h"
 #include "position_jog.h"
+#include "motion_drive.h"
 PositionOdometry positionOdom;
 PositionJog positionJog;
+// 2026-11-05 前后运动：操作量 -> 速度目标 -> 速度闭环倾角（平衡环不退出）
+MotionSpeedProfile motionSpeedProfile;
+MotionLeanControl motionLean;
+bool manualMotionWasBusy = false;
 PositionSpeedReference positionSpeedReference;
 PositionLeanControl positionLean;
 ManualTurnControl manualTurn;
@@ -3509,12 +3514,30 @@ void updateOuterLoop()
     }
 
     if (manualForward.busy(millis())) {
-        // Direct pitch mode: track encoders, but neither speed nor position may oppose the tilt.
+        // 前后运动闭环（2026-11-05）：操作量只给速度目标，倾角由速度误差生成。
+        // 不再把最大 2° 的死倾角直接写进目标角；平衡环全程参与，倾角受 1° 上限和速率限制。
+        if (!manualMotionWasBusy) {
+            // 入口无缝：用速度环当前倾角做初值，目标角不跳变。
+            motionLean.seed(speedAngleCorrection);
+            motionSpeedProfile.reset();
+            manualMotionWasBusy = true;
+        }
+        float normalized = ManualTurnControl::clamp(
+            manualForward.planned / ManualPitchControl::maxAngle, -1.0f, 1.0f);
+        float motionSpeedReference =
+            motionSpeedProfile.update(normalized * MotionSpeedProfile::maxSpeed, .01f);
+        motionLean.update(motionSpeedReference, vehicleSpeed, true, .01f);
         positionSpeedTarget = targetForwardSpeed = 0.0f;
         speedError = speedIntegral = speedErrorPrev = speedErrorDotFilt = 0.0f;
         speedPContribution = speedIContribution = 0.0f;
         speedAngleCorrection = speedAngleUnclamped = speedAngleLimited = 0.0f;
         return;
+    }
+    // 运动结束后的释放段：速度目标与倾角平滑回零，再由驻车环接管，不产生角度阶跃。
+    manualMotionWasBusy = false;
+    if (motionLean.busy() || fabsf(motionSpeedProfile.applied) > 0.0001f) {
+        motionSpeedProfile.update(0.0f, .01f);
+        motionLean.update(0.0f, vehicleSpeed, false, .01f);
     }
 
     bool positionHoldEnabled = positionKp > 0.000001f;
@@ -3852,8 +3875,8 @@ void updateOuterLoopAuthority()
 
     // Normal operation uses the speed-loop angle; held motion replaces it smoothly.
 
-    // The held angle is relative to O. No speed-loop correction is added in this mode.
-    float pitchOffset = manualForward.busy(millis()) ? manualForward.applied : manualForward.normalAuthority()*speedAngleCorrection;
+    // The held angle is relative to O. 2026-11-05：前后运动改为速度闭环，不再写死角度。
+    float pitchOffset = manualForward.normalAuthority()*speedAngleCorrection + motionLean.applied;
     targetBalanceAngle = balanceAngleOffset + outerLoopAuthority * pitchOffset;
 
   
