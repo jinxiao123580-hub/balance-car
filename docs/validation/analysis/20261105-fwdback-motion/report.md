@@ -58,8 +58,12 @@
 - 主机回归 **9 项全过**，含新增 `run_motion_drive_regressions.py`（速度斜坡、倾角上限、方向、释放无阶跃、带静摩擦对象的闭环收敛）。
   `run_forward_regressions.py` 已按新语义更新：断言入口首拍变化 ≤ 0.025°、前进倾角 ≤1.0°、后退为负、释放后回到 `O + 速度环角`。
 - 独立编译（ASCII 路径副本）：**SUCCESS**，RAM 8104 B / Flash 84388 B（改动前 8088 / 83716，+16 / +672 B）。
-- 项目中文路径下 `pio run` 在链接阶段报 `cannot open map file ...`（含 CJK 的 `.map` 路径被工具链按本地代码页解析），
-  与本次代码无关；绕开方式是把 `software/firmware` 复制到纯英文路径再 `pio run`，产物为 `firmware.elf/.bin`。
+- 项目中文路径下 `pio run` 原先在链接阶段报 `cannot open map file ...`（含 CJK 的 `.map` 路径被工具链按本地代码页解析），
+  与本次代码无关。**2026-11-06 已修复**：`platformio.ini` 的 `[platformio]` 段加
+  `build_dir = ${sysenv.USERPROFILE}/.platformio/build/pinghengche`，把构建目录移出中文路径，
+  `firmware.map` 落在纯 ASCII 目录；现在在项目目录里直接 `pio run` 即可通过（RAM 8104 B / Flash 84388 B）。
+- 烧录入口新增 `flash-firmware.bat`（项目根）：`pio run -e black_f407zg -t upload`。
+  实测 openocd 能启动并进入 `hla_swd`；当前未接 ST-Link 时报 `Error: open failed`，说明工具链与配置正确，只差硬件连线。
 
 ## 4. 上车试验建议（按顺序，每次只动一件事）
 

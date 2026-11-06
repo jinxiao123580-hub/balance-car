@@ -17,6 +17,16 @@ Windows也可双击build-firmware.bat。烧录使用ST-Link：
 pio run -e black_f407zg -t upload
 ```
 
+或直接双击 `flash-firmware.bat`（编译+烧录，失败时提示常见原因）。
+
+构建目录已由 `platformio.ini` 的 `[platformio] build_dir` 固定到
+`%USERPROFILE%\.platformio\build\pinghengche`：仓库位于中文路径时，arm-none-eabi-ld
+无法创建含 CJK 的 `firmware.map`，会让链接报 `cannot open map file`。因此不要在本目录
+恢复默认 `.pio/build`；换机器时该设置随仓库生效，产物路径只影响本机。
+
+烧录时报 `Error: open failed` 表示 openocd 没找到 ST-Link：先确认 USB 线与驱动
+（STSW-LINK009）、板子供电、SWD 四线（3V3/GND/SWDIO/SWCLK），并关闭 ST-LINK Utility 等占用工具。
+
 本轮结构整理未修改主程序、控制参数或重新烧录。[默认参数](docs/parameters.md)
 
 ## 2. 蓝牙面板
