@@ -14,7 +14,7 @@
 // 的真实摆动，不是传感器白噪声，Kalman 抹不掉，只能换成"更长窗口的净速度"。
 // 因此：满档速度/前馈/上限一起抬高，运动环改用 200ms 净速度 + 3 点中值抑制单拍跳变。
 struct MotionSpeedProfile {
-    static constexpr float maxSpeed = 10.0f;  // count/50ms，约 200 count/s（满档）
+    static constexpr float maxSpeed = 8.0f;  // count/50ms，约 160 count/s（满档）
     static constexpr float accel    = 20.0f;  // count/50ms per s，0→满速约 0.5 s
     float applied = 0.0f;
     void reset() { applied = 0.0f; }
@@ -65,12 +65,12 @@ struct NetSpeedEstimator {
 };
 
 struct MotionLeanControl {
-    // 2026-11-06 第三次修正：0.15 的误差增益对 200ms 净速度外环太高——实车出现
+    // 2026-11-06 第四次修正：1.2° 上限处实车反而最慢（|lean|=1.2 时中位净速率 41 counts/s，\n    // 0.5~0.7° 时 178~202）——贴边会进入"摇不动"的极限环，所以上限降到 0.90°。\n    // 前一次：0.15 的误差增益对 200ms 净速度外环太高——实车出现
     // 超速（-50 counts/50ms）→ 驻车环满权限 2° 刹车 → 机身 13° → 摔倒。
     // 降增益、降上限：静止满档也只到 1.2°，速度接近目标时只剩摩擦补偿。
     static constexpr float feedForwardGain = 0.06f;  // deg per (count/50ms) 参考速度：只补静摩擦
     static constexpr float speedErrorGain  = 0.05f;  // deg per (count/50ms) 速度误差：主调节
-    static constexpr float limit           = 1.20f;  // deg，绝对上限（旧开环为 2°，且无反馈）
+    static constexpr float limit           = 0.90f;  // deg，绝对上限（旧开环为 2°，且无反馈）
     static constexpr float engageRate      = 2.50f;  // deg/s
     static constexpr float releaseRate     = 3.50f;  // deg/s，释放段可以快一点
     static constexpr float trimDirectionDeadband = 0.20f; // count/50ms，参考速度在此以内不配平
@@ -81,8 +81,8 @@ struct MotionLeanControl {
     float backwardTrim = 0.00f;  // deg
     // 自学习摩擦补偿（实验，2026-11-06）：按方向各学一个偏移，等价于"自动配平 + 消稳态差"。
     // 只在该方向真正滚动(|v|>learnMinSpeed)且没有顶到上限时积分；掉电清零，不写 flash。
-    static constexpr float learnGain     = 0.02f;   // deg/s per (count/50ms) 速度误差
-    static constexpr float learnLimit    = 0.30f;   // deg，每方向学习量上限
+    static constexpr float learnGain     = 0.01f;   // deg/s per (count/50ms) 速度误差
+    static constexpr float learnLimit    = 0.15f;   // deg，每方向学习量上限
     static constexpr float learnMinSpeed = 0.80f;   // count/50ms，未真正滚动就不学
     float learnedForward = 0.0f;
     float learnedBackward = 0.0f;
@@ -134,3 +134,5 @@ struct MotionLeanControl {
         if (std::fabs(applied) < 0.0001f) applied = 0.0f;
     }
 };
+
+

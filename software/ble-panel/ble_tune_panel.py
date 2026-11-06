@@ -405,9 +405,9 @@ class TunePanel(QWidget):
         self.forward_strength.setSingleStep(0.1)
         self.forward_strength.setValue(2.0)
         # 档位换算：车端速度目标 = 档位/2 × 10 counts/50ms，档位 2.0 即满速 10 counts/50ms
-        self.forward_strength.setSuffix(" 档（≈×5 counts/50ms）")
-        self.forward_strength.setToolTip("档位不是角度。车端把档位/2×10 counts/50ms 作为速度目标，"
-                                         "倾角由速度闭环生成并限制在 1.5° 以内。")
+        self.forward_strength.setSuffix(" 档（≈×4 counts/50ms）")
+        self.forward_strength.setToolTip("档位不是角度。车端把档位/2×8 counts/50ms 作为速度目标，"
+                                         "倾角由速度闭环生成并限制在 0.9° 以内。")
         self.forward_strength.setEnabled(False)
         self.forward_reverse = QCheckBox("前后反向")
         self.forward_button = QPushButton("按住前进")
@@ -1050,8 +1050,8 @@ class TunePanel(QWidget):
             text="等待连接与实时遥测；前后请求会撤销"
         else:
             gear=self.forward_strength.value()
-            text=(f"速度档 {gear:.1f}（≈{gear*5:.1f} counts/50ms）· 实测速度 {self._car_speed:.1f}"
-                  f" · 车端倾角 {self._car_lean:+.2f}°（上限1.5°）· 速度环恢复 {self._manual_resume:.0%}")
+            text=(f"速度档 {gear:.1f}（≈{gear*4:.1f} counts/50ms）· 实测速度 {self._car_speed:.1f}"
+                  f" · 车端倾角 {self._car_lean:+.2f}°（上限0.9°）· 速度环恢复 {self._manual_resume:.0%}")
         self.jog_apply_status.setText(text)
         self.jog_apply_status.setStyleSheet("color:#1565c0;" if ready else "color:#c45100;")
 
@@ -1062,7 +1062,7 @@ class TunePanel(QWidget):
         if self.forward_reverse.isChecked(): direction=-direction
         self._forward_value=direction*self.forward_strength.value()
         self.turn_label.setText(
-            f"速度档 {self._forward_value:+.1f}（≈{abs(self._forward_value)*5:.1f} counts/50ms）；松开回零")
+            f"速度档 {self._forward_value:+.1f}（≈{abs(self._forward_value)*4:.1f} counts/50ms）；松开回零")
         self.turn_tick(force=True)
 
     def stop_forward(self):
@@ -1129,3 +1129,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
