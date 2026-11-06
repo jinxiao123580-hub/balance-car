@@ -327,6 +327,9 @@ class TunePanel(QWidget):
         self._manual_applied = 0.0
         self._manual_rate = 0.0
         self._manual_resume = 1.0
+        self._car_lean = 0.0          # 车端实际运动倾角 = (target100 - O)/100
+        self._car_speed = 0.0         # 车端实测速度 counts/50ms
+        self._motion_closed_loop = False   # 车端是否 MOTION=2（速度闭环前后）
         self._move_supported = False
         self._turn_zero_pending = False
         self._turn_future = None
@@ -397,10 +400,14 @@ class TunePanel(QWidget):
         outer.addLayout(steering)
         driving = QHBoxLayout()
         self.forward_strength = QDoubleSpinBox()
-        self.forward_strength.setDecimals(2)
-        self.forward_strength.setRange(2, 2)
-        self.forward_strength.setValue(2)
-        self.forward_strength.setSuffix(" ° 相对O（固定）")
+        self.forward_strength.setDecimals(1)
+        self.forward_strength.setRange(0.5, 2.0)
+        self.forward_strength.setSingleStep(0.1)
+        self.forward_strength.setValue(2.0)
+        # 档位换算：车端速度目标 = 档位/2 × 5 counts/50ms，档位 2.0 即满速 5 counts/50ms
+        self.forward_strength.setSuffix(" 档（≈×2.5 counts/50ms）")
+        self.forward_strength.setToolTip("档位不是角度。车端把档位/2×5 counts/50ms 作为速度目标，"
+                                         "倾角由速度闭环生成并限制在 1° 以内。")
         self.forward_strength.setEnabled(False)
         self.forward_reverse = QCheckBox("前后反向")
         self.forward_button = QPushButton("按住前进")
@@ -409,15 +416,15 @@ class TunePanel(QWidget):
             button.setEnabled(False)
             button.pressed.connect(lambda d=direction: self.start_forward(d))
             button.released.connect(self.stop_forward)
-        for w in (QLabel("前后倾角"), self.forward_strength, self.forward_reverse,
+        for w in (QLabel("前后速度"), self.forward_strength, self.forward_reverse,
                   self.forward_button, self.backward_button):
             driving.addWidget(w)
-        driving.addWidget(QLabel("按住平滑偏到O±2°；松开平滑回正"))
+        driving.addWidget(QLabel("按住给速度指令；车端闭环生成倾角≤1°，松开按加速度回零"))
         self.motion_mode_label = QLabel("车端模式：未确认")
         driving.addWidget(self.motion_mode_label)
         driving.addStretch()
         outer.addLayout(driving)
-        self.jog_apply_status = QLabel("前后需固定±2°平滑固件；等待车端确认")
+        self.jog_apply_status = QLabel("前后需速度闭环固件（MOTION=2）；等待车端确认")
         self.jog_apply_status.setWordWrap(True)
         outer.addWidget(self.jog_apply_status)
 
@@ -799,9 +806,17 @@ class TunePanel(QWidget):
         if s.startswith("PAR:"):
             caps = s.split()
             self._turn_supported = "TURN=1" in caps or "TURN=2" in caps
-            self._move_supported = all(cap in caps for cap in ("MOVE=5", "SMOOTH=1"))
-            self.motion_mode_label.setText("车端：固定±2°平滑模式就绪" if self._move_supported else "前后需固定±2°平滑固件；当前仅转向")
+            self._motion_closed_loop = "MOTION=2" in caps
+            # 前后只在速度闭环固件上启用：旧 MOVE=5 是开环死倾角，接口值含义不同，不能复用。
+            self._move_supported = self._motion_closed_loop
+            if self._motion_closed_loop:
+                self.motion_mode_label.setText("车端：速度闭环前后就绪")
+            elif "MOVE=5" in caps:
+                self.motion_mode_label.setText("车端：旧开环倾角固件，前后已禁用")
+            else:
+                self.motion_mode_label.setText("前后需速度闭环固件（MOTION=2）；当前仅转向")
             self.turn_strength.setMaximum(300 if "TURN=2" in caps else 100)
+            self.forward_strength.setEnabled(self._move_supported)
             self.forward_button.setEnabled(self._move_supported)
             self.backward_button.setEnabled(self._move_supported)
             self.turn_enable.setEnabled(self._turn_supported)
@@ -830,6 +845,10 @@ class TunePanel(QWidget):
                     self._manual_applied=int(tail[TELEM_COLS.index("manualApplied1000")+1])/1000
                     self._manual_rate=int(tail[TELEM_COLS.index("manualAngleRate1000")+1])/1000
                     self._manual_resume=int(tail[TELEM_COLS.index("manualResume1000")+1])/1000
+                    # 实际运动倾角 = 目标角 - 平衡点 O（O 来自 PAR 回显，未知时按 0 计）
+                    self._car_lean=(float(tail[TELEM_COLS.index("target100")+1])/100.0
+                                    -float(self.car_param_val.get("O",0.0)))
+                    self._car_speed=int(tail[TELEM_COLS.index("speed1000")+1])/1000.0
             except (ValueError,IndexError):
                 pass
             show = ("遥测 " + tail[1] + "ms pitch=" + (tail[2] if len(tail) > 2 else "?")
@@ -1024,39 +1043,42 @@ class TunePanel(QWidget):
         ready=self._forward_ready()
         self.forward_button.setEnabled(ready)
         self.backward_button.setEnabled(ready)
+        self.forward_strength.setEnabled(self._move_supported)
         if not self._move_supported:
-            text="前后需固定±2°平滑固件；旧位置点动不再启用"
+            text="前后需速度闭环固件（MOTION=2）；旧开环倾角版本不启用"
         elif not ready:
             text="等待连接与实时遥测；前后请求会撤销"
         else:
-            text=(f"固定O±2°；车端请求{self._manual_requested:+.2f}° / 平滑输出{self._manual_applied:+.3f}° / "
-                  f"变化率{self._manual_rate:+.2f}°/s；速度环恢复{self._manual_resume:.0%}")
+            gear=self.forward_strength.value()
+            text=(f"速度档 {gear:.1f}（≈{gear*2.5:.1f} counts/50ms）· 实测速度 {self._car_speed:.1f}"
+                  f" · 车端倾角 {self._car_lean:+.2f}°（上限1°）· 速度环恢复 {self._manual_resume:.0%}")
         self.jog_apply_status.setText(text)
         self.jog_apply_status.setStyleSheet("color:#1565c0;" if ready else "color:#c45100;")
 
     def start_forward(self, direction):
         if not (self.turn_enable.isChecked() and self._forward_ready()):
-            self.turn_label.setText("需启用遥控并保持固定±2°固件的实时遥测")
+            self.turn_label.setText("需启用遥控并保持速度闭环固件（MOTION=2）的实时遥测")
             return
         if self.forward_reverse.isChecked(): direction=-direction
-        self._forward_value=direction*2
-        self.turn_label.setText(f"请求相对O {self._forward_value:+d}°；松开平滑回正")
+        self._forward_value=direction*self.forward_strength.value()
+        self.turn_label.setText(
+            f"速度档 {self._forward_value:+.1f}（≈{abs(self._forward_value)*2.5:.1f} counts/50ms）；松开回零")
         self.turn_tick(force=True)
 
     def stop_forward(self):
         self._forward_value=0
         self._turn_zero_pending=True
         self.turn_tick(force=True)
-        self.turn_label.setText("前后倾角平滑回O，再渐渐恢复速度环")
+        self.turn_label.setText("速度指令回零；倾角按速率释放后交回驻车")
 
     def stop_motion(self):
         self._forward_value=0
         self.stop_turn()
-        self.turn_label.setText("撤销两轴请求，倾角平滑回O，直立控制继续")
+        self.turn_label.setText("撤销两轴请求，速度指令回零，直立控制继续")
 
     def motion_command(self):
         if self._move_supported:
-            return f"^ {self._turn_value},{self._forward_value}"
+            return f"^ {self._turn_value:g},{self._forward_value:g}"
         return f"V {self._turn_value}"
 
     def stop_turn(self):

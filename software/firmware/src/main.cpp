@@ -4670,7 +4670,7 @@ void handleBtCommand(char* cmd, uint8_t len)
     while (vlen > 0 && (cmd[vlen-1] == ' ' || cmd[vlen-1] == '\r' || cmd[vlen-1] == '\n')) vlen--;
     if (key == '?') {
         prepareCommandResponse();
-        reply.print("PAR: TURN=2 MOVE=5 SMOOTH=1 TILTMAX=");
+        reply.print("PAR: TURN=2 MOVE=5 SMOOTH=1 MOTION=2 TILTMAX=");
         reply.print(ManualPitchControl::maxAngle, 2);
         reply.print(" ");
         reply.print("P="); reply.print(balanceKp, 2);
