@@ -187,6 +187,26 @@ int main() {
         assert(near(zero.applied, 0.0f, 1e-5f));
     }
 
+    // 13) 自学习：慢速滚动时按方向累积、有上限、静止不学、不串方向
+    {
+        MotionLeanControl l;
+        for (int i = 0; i < 600; ++i) l.update(-MotionSpeedProfile::maxSpeed, -2.0f, true, dt);
+        printf("learn backward %.3f lean %.3f fwd %.3f\n",
+               l.learnedBackward, l.applied, l.learnedForward);
+        assert(l.learnedBackward < -0.02f);                       // 学到负向补偿
+        assert(l.learnedBackward >= -MotionLeanControl::learnLimit - 1e-6f);
+        assert(near(l.learnedForward, 0.0f, 1e-6f));              // 不串到前进
+        assert(l.applied >= -MotionLeanControl::limit - 1e-6f);
+
+        MotionLeanControl stall;                                   // 卡住不滚动：不学
+        for (int i = 0; i < 600; ++i) stall.update(-MotionSpeedProfile::maxSpeed, 0.0f, true, dt);
+        assert(near(stall.learnedBackward, 0.0f, 1e-6f));
+
+        MotionLeanControl ok;                                      // 已经达到目标：不再学
+        for (int i = 0; i < 600; ++i) ok.update(5.0f, 5.0f, true, dt);
+        assert(std::fabs(ok.learnedForward) < 0.02f);
+    }
+
     puts("motion_drive regressions OK");
     return 0;
 }

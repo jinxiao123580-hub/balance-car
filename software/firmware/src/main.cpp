@@ -4233,7 +4233,7 @@ void sendTelemetry()
         (int)(telemKalmanBiasMax * 1000.0f),   // 48 窗口内 kalmanBias 最大值 *1000
         (int)(manualForward.requested*1000.0f),
         (int)(manualForward.applied*1000.0f),
-        0, // Reserved manualI1000: dedicated forward integrator removed.
+        (int)(motionLean.lastLearned * 1000.0f), // manualI1000：运动外环当前方向的学习量（°×1000）
         (int)manualTurn.requested,
         (int)positionHoldSuspended,
         (manualForward.needsZero ? 1 : 0) | (manualTurn.needsZero ? 2 : 0),

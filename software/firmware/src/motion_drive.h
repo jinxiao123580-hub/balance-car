@@ -79,9 +79,17 @@ struct MotionLeanControl {
     // 不参与速度环，也不影响驻车；回退置 0 即可。
     float forwardTrim  = 0.00f;  // deg
     float backwardTrim = 0.00f;  // deg
+    // 自学习摩擦补偿（实验，2026-11-06）：按方向各学一个偏移，等价于"自动配平 + 消稳态差"。
+    // 只在该方向真正滚动(|v|>learnMinSpeed)且没有顶到上限时积分；掉电清零，不写 flash。
+    static constexpr float learnGain     = 0.02f;   // deg/s per (count/50ms) 速度误差
+    static constexpr float learnLimit    = 0.30f;   // deg，每方向学习量上限
+    static constexpr float learnMinSpeed = 0.80f;   // count/50ms，未真正滚动就不学
+    float learnedForward = 0.0f;
+    float learnedBackward = 0.0f;
+    float lastLearned = 0.0f;                       // 遥测：最近一次参与方向的学习量
     float requested = 0.0f;
     float applied = 0.0f;
-    void reset() { requested = applied = 0.0f; }
+    void reset() { requested = applied = 0.0f; learnedForward = learnedBackward = lastLearned = 0.0f; }
     // 进入运动的无缝衔接：用当前速度环已输出的倾角作为初值，避免目标角在入口跳变。
     void seed(float offset) {
         if (!std::isfinite(offset)) offset = 0.0f;
@@ -98,11 +106,26 @@ struct MotionLeanControl {
         }
         if (engaged) {
             float speedError = speedReference - measuredSpeed;
-            float trim = (speedReference > trimDirectionDeadband) ? forwardTrim
-                       : (speedReference < -trimDirectionDeadband ? -backwardTrim : 0.0f);
-            requested = ManualTurnControl::clamp(
-                feedForwardGain * speedReference + speedErrorGain * speedError + trim,
-                -limit, limit);
+            bool forward = speedReference > trimDirectionDeadband;
+            bool backward = speedReference < -trimDirectionDeadband;
+            float trim = forward ? forwardTrim : (backward ? -backwardTrim : 0.0f);
+            float base = feedForwardGain * speedReference + speedErrorGain * speedError + trim;
+
+            float add = 0.0f;
+            if (forward || backward) {
+                float &learned = forward ? learnedForward : learnedBackward;
+                bool rolling = std::fabs(measuredSpeed) > learnMinSpeed;
+                bool pushing = (base + learned) * speedError > 0.0f;
+                bool saturated = pushing && std::fabs(base + learned) >= limit;
+                if (rolling && !saturated) {
+                    learned += learnGain * speedError * dt;
+                    if (learned > learnLimit) learned = learnLimit;
+                    else if (learned < -learnLimit) learned = -learnLimit;
+                }
+                add = learned;
+                lastLearned = learned;
+            }
+            requested = ManualTurnControl::clamp(base + add, -limit, limit);
         } else {
             requested = 0.0f;
         }
