@@ -15,6 +15,7 @@ PositionJog positionJog;
 // 2026-11-05 前后运动：操作量 -> 速度目标 -> 速度闭环倾角（平衡环不退出）
 MotionSpeedProfile motionSpeedProfile;
 MotionLeanControl motionLean;
+NetSpeedEstimator motionNetSpeed;   // 前后运动外环专用的 200ms 净速度
 bool manualMotionWasBusy = false;
 PositionSpeedReference positionSpeedReference;
 PositionLeanControl positionLean;
@@ -3517,16 +3518,18 @@ void updateOuterLoop()
         // 前后运动闭环（2026-11-05）：操作量只给速度目标，倾角由速度误差生成。
         // 不再把最大 2° 的死倾角直接写进目标角；平衡环全程参与，倾角受 1° 上限和速率限制。
         if (!manualMotionWasBusy) {
-            // 入口无缝：用速度环当前倾角做初值，目标角不跳变。
+            // 入口无缝：用速度环当前倾角做初值，目标角不跳变；净速度从当前位置重新起算。
             motionLean.seed(speedAngleCorrection);
             motionSpeedProfile.reset();
+            motionNetSpeed.reset(vehiclePosition);
             manualMotionWasBusy = true;
         }
         float normalized = ManualTurnControl::clamp(
             manualForward.planned / ManualPitchControl::maxAngle, -1.0f, 1.0f);
         float motionSpeedReference =
             motionSpeedProfile.update(normalized * MotionSpeedProfile::maxSpeed, .01f);
-        motionLean.update(motionSpeedReference, vehicleSpeed, true, .01f);
+        // 200ms 净速度：滤掉位置环绕着平衡点的高频摆动，只留真正的位移趋势。
+        motionLean.update(motionSpeedReference, motionNetSpeed.update(vehiclePosition), true, .01f);
         positionSpeedTarget = targetForwardSpeed = 0.0f;
         speedError = speedIntegral = speedErrorPrev = speedErrorDotFilt = 0.0f;
         speedPContribution = speedIContribution = 0.0f;

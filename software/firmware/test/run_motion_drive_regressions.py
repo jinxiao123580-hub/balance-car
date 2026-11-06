@@ -128,6 +128,41 @@ int main() {
         assert(v > -3.0f * MotionSpeedProfile::maxSpeed);
     }
 
+    // 9) 200ms 净速度：恒定 5 counts/50ms（100 counts/s，即 1 count/10ms）
+    {
+        NetSpeedEstimator e;
+        e.reset(0.0f);
+        float p = 0.0f, v = 0.0f;
+        for (int i = 0; i < 60; ++i) { p += 1.0f; v = e.update(p); }
+        printf("net_speed const v=%.3f\n", v);
+        assert(near(v, 5.0f, 0.05f));
+    }
+
+    // 10) 单拍 +100 counts 跳变必须被 3 点中值吃掉
+    {
+        NetSpeedEstimator e;
+        e.reset(0.0f);
+        float p = 0.0f, v = 0.0f;
+        for (int i = 0; i < 60; ++i) {
+            p += 1.0f;
+            float sample = (i == 30) ? p + 100.0f : p;
+            v = e.update(sample);
+        }
+        printf("net_speed spike v=%.3f\n", v);
+        assert(near(v, 5.0f, 0.1f));
+    }
+
+    // 11) 反向为负；复位后从 0 起算
+    {
+        NetSpeedEstimator e;
+        e.reset(0.0f);
+        float p = 0.0f, v = 0.0f;
+        for (int i = 0; i < 60; ++i) { p -= 1.0f; v = e.update(p); }
+        assert(near(v, -5.0f, 0.05f));
+        e.reset(p);
+        assert(near(e.update(p), 0.0f, 1e-6f));
+    }
+
     puts("motion_drive regressions OK");
     return 0;
 }

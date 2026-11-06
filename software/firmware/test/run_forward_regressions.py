@@ -27,7 +27,9 @@ mock = r'''
 ManualPitchControl manualForward;
 MotionSpeedProfile motionSpeedProfile;
 MotionLeanControl motionLean;
+NetSpeedEstimator motionNetSpeed;
 bool manualMotionWasBusy = false;
+float vehiclePosition = 0.0f;
 uint32_t now = 0;
 uint32_t millis() { return now; }
 float vehicleSpeed = 0, positionSpeedTarget = 1, targetForwardSpeed = 1, speedError = 100, speedIntegral = 20;
