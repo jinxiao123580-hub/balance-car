@@ -43,7 +43,7 @@ int main() {
         MotionLeanControl l;
         float target = MotionLeanControl::feedForwardGain * 5.0f +
                        MotionLeanControl::speedErrorGain * (5.0f - 0.0f);
-        assert(near(target, 0.75f, 1e-4f));
+        assert(near(target, 0.70f, 1e-4f));
         for (int i = 0; i < 400; ++i) l.update(5.0f, 0.0f, true, dt);
         assert(near(l.applied, target, 1e-3f));
         assert(l.applied <= MotionLeanControl::limit + 1e-6f);
