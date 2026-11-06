@@ -65,8 +65,12 @@ struct NetSpeedEstimator {
 };
 
 struct MotionLeanControl {
-    static constexpr float feedForwardGain = 0.12f;  // deg per (count/50ms) 参考速度：克服静摩擦
-    static constexpr float speedErrorGain  = 0.02f;  // deg per (count/50ms) 速度误差
+    // 2026-11-06 第二次修正：前一版 lean=0.12×vref+0.02×(vref−v) 在前馈主导时，
+    // 速度到达目标后仍有 1.2° 恒定倾角，等于没有速度调节；是否真的滚起来取决于
+    // 地面/静摩擦（同一份记录里出现 +13 counts/s 和 +241 counts/s 两种结果）。
+    // 改为速度误差主导：目标速度处只剩很小的摩擦前馈，速度误差大时才顶上限幅。
+    static constexpr float feedForwardGain = 0.03f;  // deg per (count/50ms) 参考速度：只补静摩擦
+    static constexpr float speedErrorGain  = 0.15f;  // deg per (count/50ms) 速度误差：主调节
     static constexpr float limit           = 1.50f;  // deg，绝对上限（旧开环为 2°，且无反馈）
     static constexpr float engageRate      = 2.50f;  // deg/s
     static constexpr float releaseRate     = 3.50f;  // deg/s，释放段可以快一点
