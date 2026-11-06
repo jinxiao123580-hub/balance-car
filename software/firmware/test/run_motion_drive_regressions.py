@@ -163,6 +163,30 @@ int main() {
         assert(near(e.update(p), 0.0f, 1e-6f));
     }
 
+    // 12) 方向配平：只影响对应方向的倾角，且不得越过上限
+    {
+        const float vref = MotionSpeedProfile::maxSpeed;
+        MotionLeanControl base;
+        for (int i = 0; i < 400; ++i) base.update(vref, 0.0f, true, dt);
+        MotionLeanControl trim;
+        trim.forwardTrim = 0.05f;
+        trim.backwardTrim = 0.05f;
+        for (int i = 0; i < 400; ++i) trim.update(vref, 0.0f, true, dt);
+        float fwd = trim.applied;
+        for (int i = 0; i < 400; ++i) trim.update(-vref, 0.0f, true, dt);
+        float bwd = trim.applied;
+        printf("trim fwd=%.3f (base %.3f) bwd=%.3f\n", fwd, base.applied, bwd);
+        assert(fwd > base.applied);                       // 正配平让前进更用力
+        assert(bwd < -base.applied);                      // 同一配平让后退更用力（更负）
+        assert(fwd <= MotionLeanControl::limit + 1e-6f);
+        assert(bwd >= -MotionLeanControl::limit - 1e-6f);
+        // 参考速度接近 0 时不配平，避免越零时来回加力
+        MotionLeanControl zero;
+        zero.forwardTrim = 0.05f; zero.backwardTrim = -0.05f;
+        for (int i = 0; i < 400; ++i) zero.update(0.0f, 0.0f, true, dt);
+        assert(near(zero.applied, 0.0f, 1e-5f));
+    }
+
     puts("motion_drive regressions OK");
     return 0;
 }

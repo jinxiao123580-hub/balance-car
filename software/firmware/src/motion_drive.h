@@ -73,6 +73,12 @@ struct MotionLeanControl {
     static constexpr float limit           = 1.20f;  // deg，绝对上限（旧开环为 2°，且无反馈）
     static constexpr float engageRate      = 2.50f;  // deg/s
     static constexpr float releaseRate     = 3.50f;  // deg/s，释放段可以快一点
+    static constexpr float trimDirectionDeadband = 0.20f; // count/50ms，参考速度在此以内不配平
+    // 方向配平（2026-11-06）：同一倾角下前进比后退快约 2.2 倍时的补偿量。
+    // 两个值都是"正值=该方向更用力"，内部按参考速度方向取符号，只平移运动倾角，
+    // 不参与速度环，也不影响驻车；回退置 0 即可。
+    float forwardTrim  = 0.00f;  // deg
+    float backwardTrim = 0.00f;  // deg
     float requested = 0.0f;
     float applied = 0.0f;
     void reset() { requested = applied = 0.0f; }
@@ -92,8 +98,10 @@ struct MotionLeanControl {
         }
         if (engaged) {
             float speedError = speedReference - measuredSpeed;
+            float trim = (speedReference > trimDirectionDeadband) ? forwardTrim
+                       : (speedReference < -trimDirectionDeadband ? -backwardTrim : 0.0f);
             requested = ManualTurnControl::clamp(
-                feedForwardGain * speedReference + speedErrorGain * speedError,
+                feedForwardGain * speedReference + speedErrorGain * speedError + trim,
                 -limit, limit);
         } else {
             requested = 0.0f;

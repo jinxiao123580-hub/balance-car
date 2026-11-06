@@ -34,6 +34,21 @@
 两次对比见[逐次对比](validation/analysis/20261106-press-variance/report.md)与[失稳分析](validation/analysis/20261106-instability/report.md)。
 反向命令自然经过零点，不需要额外的换向轨迹。
 
+## 方向配平
+
+同一倾角下前进/后退速率不等时（2026-11-06 实测：同倾角下前进 +85、后退 −38 counts/s，约 2.2 倍），
+用 `motion_drive.h` 里 `MotionLeanControl` 的两个成员补偿：
+
+```cpp
+float forwardTrim  = 0.00f;  // deg，正值=前进更用力
+float backwardTrim = 0.00f;  // deg，正值=后退更用力
+```
+
+- 只平移运动倾角，不参与速度环，也不影响驻车；参考速度在 ±0.20 counts/50ms 内不配平，避免越零抖；
+- 起步建议每次 0.05°，按上面这组数据可先把 `backwardTrim` 从 0 试到 0.20；
+- 配平过大会把该方向顶到 1.20° 上限、重新引入超调，出现 `finalHz` 打满就要回退；
+- 若自由平衡测出的真实平衡点与 O 差 0.3° 以上，优先改 O，配平只作为机械不对称的补充。
+
 ## 控制与保护
 
 - 进入时 IMU 正常、姿态偏离 O ≤5°；姿态偏离 ≥10° 时外环权限为 0，只留直立 PD 救车。
