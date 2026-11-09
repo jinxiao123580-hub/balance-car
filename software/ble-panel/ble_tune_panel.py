@@ -330,6 +330,7 @@ class TunePanel(QWidget):
         self._car_lean = 0.0          # 车端实际运动倾角 = (target100 - O)/100
         self._car_speed = 0.0         # 车端实测速度 counts/50ms
         self._motion_closed_loop = False   # 车端是否 MOTION=2（速度闭环前后）
+        self._firmware_tag = "未知"        # 车端 FW= 回显，用于确认面板/固件是否同版
         self._move_supported = False
         self._turn_zero_pending = False
         self._turn_future = None
@@ -809,12 +810,19 @@ class TunePanel(QWidget):
             self._motion_closed_loop = "MOTION=2" in caps
             # 前后只在速度闭环固件上启用：旧 MOVE=5 是开环死倾角，接口值含义不同，不能复用。
             self._move_supported = self._motion_closed_loop
+            # 固件版本标记（FW=yyyyMMdd）：用于一眼确认"面板与固件是否同一版"
+            fw = next((c.split("=", 1)[1] for c in caps if c.startswith("FW=")), "")
+            self._firmware_tag = fw or "未知"
+            fw_suffix = f" · FW={self._firmware_tag}"
             if self._motion_closed_loop:
-                self.motion_mode_label.setText("车端：速度闭环前后就绪")
+                self.motion_mode_label.setText("车端：速度闭环前后就绪" + fw_suffix)
             elif "MOVE=5" in caps:
-                self.motion_mode_label.setText("车端：旧开环倾角固件，前后已禁用")
+                self.motion_mode_label.setText("车端：旧开环倾角固件，前后已禁用" + fw_suffix
+                                               + "（需重烧 2026-11-06 之后的固件）")
             else:
-                self.motion_mode_label.setText("前后需速度闭环固件（MOTION=2）；当前仅转向")
+                self.motion_mode_label.setText("前后需速度闭环固件（MOTION=2）；当前仅转向" + fw_suffix)
+            self.motion_mode_label.setStyleSheet(
+                "" if self._motion_closed_loop else "color:#c45100;")
             self.turn_strength.setMaximum(300 if "TURN=2" in caps else 100)
             self.forward_strength.setEnabled(self._move_supported)
             self.forward_button.setEnabled(self._move_supported)
