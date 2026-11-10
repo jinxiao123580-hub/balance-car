@@ -2,7 +2,10 @@
 """前后运动/加减速/停车试验的量化分析。
 
 用法:
-    python software/analysis/analyze_motion_test.py <csv> [--max-speed 8] [--markdown]
+    python software/analysis/analyze_motion_test.py <csv> [--max-speed 5] [--markdown]
+
+--max-speed 必须与固件 MotionSpeedProfile::maxSpeed 一致（2026-11-10 起为 5.0，此前 8.0）：
+vref = 档位/2 × max-speed，给错了稳态误差会整体偏。
 
 对每次"按住"（manualReq1000 非零且方向不变）输出一段指标：
 
@@ -84,8 +87,9 @@ def segments(cmd):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("csv")
-    ap.add_argument("--max-speed", type=float, default=8.0,
-                    help="满档速度目标 counts/50ms（与 MotionSpeedProfile::maxSpeed 一致）")
+    ap.add_argument("--max-speed", type=float, default=5.0,
+                    help="满档速度目标 counts/50ms（与 MotionSpeedProfile::maxSpeed 一致；"
+                         "2026-11-10 起为 5.0，此前 8.0 —— 分析旧录制要显式 --max-speed 8）")
     ap.add_argument("--json")
     ap.add_argument("--markdown", action="store_true")
     ap.add_argument("--md-out", help="把 markdown 表格写入文件")
