@@ -207,6 +207,38 @@ int main() {
         assert(std::fabs(ok.learnedForward) < 0.02f);
     }
 
+    // 14) 预测位置环：计划=速度积分、前视补偿、死区、限幅、X=0 等价于关闭
+    {
+        MotionPositionPlan plan;
+        plan.start(0.0f);
+        float corr = 0.0f;
+        for (int i = 0; i < 100; ++i) {           // 1 s，vref=4 counts/50ms -> 计划 80 counts
+            corr = plan.update(4.0f, 0.0f, 0.0f, true, dt, 0.05f, 1.5f, 0.0f);
+        }
+        printf("plan=%.1f corr=%.2f\n", plan.plan, corr);
+        assert(near(plan.plan, 80.0f, 1.0f));     // 4 * 20 counts/s * 1 s
+        assert(corr > 1.0f);                      // 实际没动，应产生向前的速度增量
+        assert(corr <= 1.5f + 1e-6f);             // 受 Y 限幅
+        // 前视：实际落后 4 counts/50ms 时，预测位置更靠前，修正变小
+        float c0 = plan.update(4.0f, 0.0f, 0.0f, true, dt, 0.01f, 1.5f, 0.0f);
+        float c1 = plan.update(4.0f, 0.0f, 4.0f, true, dt, 0.01f, 1.5f, 0.0f);
+        assert(c1 < c0);
+        // 死区：误差小于死区时不出力
+        MotionPositionPlan d;
+        d.start(10.0f);
+        assert(near(d.update(0.0f, 10.0f, 0.0f, true, dt, 0.05f, 1.5f, 3.0f), 0.0f, 1e-6f));
+        // X=0（gain=0）等价于纯速度环
+        MotionPositionPlan z;
+        z.start(0.0f);
+        assert(near(z.update(4.0f, 0.0f, 0.0f, true, dt, 0.0f, 1.5f, 0.0f), 0.0f, 1e-6f));
+        // 未运动：计划跟随实际，不产生回位
+        MotionPositionPlan s;
+        s.start(0.0f);
+        float out = 0.0f;
+        for (int i = 0; i < 100; ++i) out = s.update(0.0f, 250.0f, 0.0f, false, dt, 0.05f, 1.5f, 0.0f);
+        assert(near(out, 0.0f, 1e-6f));
+    }
+
     puts("motion_drive regressions OK");
     return 0;
 }
@@ -228,3 +260,5 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+

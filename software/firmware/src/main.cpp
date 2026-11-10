@@ -15,6 +15,7 @@ PositionJog positionJog;
 // 2026-11-05 前后运动：操作量 -> 速度目标 -> 速度闭环倾角（平衡环不退出）
 MotionSpeedProfile motionSpeedProfile;
 MotionLeanControl motionLean;
+MotionPositionPlan motionPlan;      // 预测位置环（X=0 时输出恒 0，行为不变）
 NetSpeedEstimator motionNetSpeed;   // 前后运动外环专用的 200ms 净速度
 bool manualMotionWasBusy = false;
 PositionSpeedReference positionSpeedReference;
@@ -3530,6 +3531,7 @@ void updateOuterLoop()
             motionLean.seed(speedAngleCorrection);
             motionSpeedProfile.reset();
             motionNetSpeed.reset(vehiclePosition);
+            motionPlan.start(vehiclePosition);
             manualMotionWasBusy = true;
         }
         float normalized = ManualTurnControl::clamp(
@@ -3537,7 +3539,14 @@ void updateOuterLoop()
         float motionSpeedReference =
             motionSpeedProfile.update(normalized * MotionSpeedProfile::maxSpeed, .01f);
         // 200ms 净速度：滤掉位置环绕着平衡点的高频摆动，只留真正的位移趋势。
-        motionLean.update(motionSpeedReference, motionNetSpeed.update(vehiclePosition), true, .01f);
+        float netSpeed = motionNetSpeed.update(vehiclePosition);
+        // 预测位置环：计划位置 = 参考速度积分，误差用 (实际 + 净速度×前视) 计算，
+        // 输出只是速度增量；positionKp=0 时恒为 0，等价于纯速度环。
+        float posCorrection = motionPlan.update(motionSpeedReference, vehiclePosition, netSpeed,
+                                                true, .01f, positionKp,
+                                                MAX_POSITION_RETURN_SPEED,
+                                                POSITION_DEADBAND_COUNT);
+        motionLean.update(motionSpeedReference + posCorrection, netSpeed, true, .01f);
         positionSpeedTarget = targetForwardSpeed = 0.0f;
         speedError = speedIntegral = speedErrorPrev = speedErrorDotFilt = 0.0f;
         speedPContribution = speedIContribution = 0.0f;
@@ -3546,6 +3555,7 @@ void updateOuterLoop()
     }
     // 运动结束后的释放段：速度目标与倾角平滑回零，再由驻车环接管，不产生角度阶跃。
     manualMotionWasBusy = false;
+    motionPlan.stop(vehiclePosition);
     if (motionLean.busy() || fabsf(motionSpeedProfile.applied) > 0.0001f) {
         motionSpeedProfile.update(0.0f, .01f);
         motionLean.update(0.0f, vehicleSpeed, false, .01f);
@@ -5556,6 +5566,7 @@ void loop()
     uint32_t workUs = micros() - controlWorkStartUs;
     if (workUs > controlMaxWorkUs) controlMaxWorkUs = workUs;
 }
+
 
 
 

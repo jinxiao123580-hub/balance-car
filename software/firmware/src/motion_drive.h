@@ -64,6 +64,35 @@ struct NetSpeedEstimator {
     }
 };
 
+// 预测位置环（2026-11-10 实验）：位置计划 = 参考速度的积分；误差用"预测位置"
+// （当前位置 + 净速度 × 前视时间）来抵消 200 ms 净速度窗口的滞后；输出只是速度增量，
+// 叠加到速度环参考上，不直接改倾角，所以不会和速度环抢目标角。
+// 未运动时计划跟随实际位置（B 方案：不回起点，只在停车后由驻车环抗漂移）。
+struct MotionPositionPlan {
+    static constexpr float horizon = 0.15f;   // s，前视时间
+    float plan = 0.0f;
+    bool active = false;
+    void start(float position) { plan = position; active = true; }
+    void stop(float position) { plan = position; active = false; }
+    float update(float speedRef, float position, float netSpeed, bool engaged, float dt,
+                 float gain, float limit, float deadband) {
+        if (!std::isfinite(position) || !std::isfinite(netSpeed) ||
+            !std::isfinite(dt) || dt <= 0.0f) {
+            return 0.0f;
+        }
+        if (engaged && active) {
+            plan += speedRef * (dt / 0.05f);          // counts：1 count/50ms = 20 counts/s
+        } else {
+            plan = position;                          // 未运动：计划跟随实际，不产生回位
+        }
+        float predicted = position + netSpeed * (horizon / 0.05f);
+        float error = plan - predicted;
+        if (std::fabs(error) <= deadband) return 0.0f;
+        error -= (error > 0.0f) ? deadband : -deadband;
+        return ManualTurnControl::clamp(gain * error, -limit, limit);
+    }
+};
+
 struct MotionLeanControl {
     // 2026-11-06 第四次修正：1.2° 上限处实车反而最慢（|lean|=1.2 时中位净速率 41 counts/s，\n    // 0.5~0.7° 时 178~202）——贴边会进入"摇不动"的极限环，所以上限降到 0.90°。\n    // 前一次：0.15 的误差增益对 200ms 净速度外环太高——实车出现
     // 超速（-50 counts/50ms）→ 驻车环满权限 2° 刹车 → 机身 13° → 摔倒。

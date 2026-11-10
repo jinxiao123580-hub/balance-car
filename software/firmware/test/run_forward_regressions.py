@@ -28,7 +28,11 @@ ManualPitchControl manualForward;
 MotionSpeedProfile motionSpeedProfile;
 MotionLeanControl motionLean;
 NetSpeedEstimator motionNetSpeed;
+MotionPositionPlan motionPlan;
 bool manualMotionWasBusy = false;
+float positionKp = 5.0f;
+float MAX_POSITION_RETURN_SPEED = 1.5f;
+float POSITION_DEADBAND_COUNT = 0.0f;
 float vehiclePosition = 0.0f;
 uint32_t now = 0;
 uint32_t millis() { return now; }
@@ -148,3 +152,4 @@ with tempfile.TemporaryDirectory(prefix="fixed-angle-", dir=root / ".pio") as tm
     cpp.write_text(code, encoding="utf-8")
     subprocess.run(["g++", "-std=c++11", "-O2", "-I", str(root / "src"), str(cpp), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
+
