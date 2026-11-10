@@ -289,7 +289,8 @@ class BleClient:
 # ---------------- GUI ----------------
 from PyQt5.QtWidgets import (QApplication, QWidget, QGridLayout, QLabel, QLineEdit,
                              QSlider, QPushButton, QTextEdit, QVBoxLayout, QHBoxLayout,
-                             QGroupBox, QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox)
+                             QGroupBox, QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox,
+                             QScrollArea, QFrame)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject, QTimer, QEvent
 
 
@@ -493,10 +494,20 @@ class TunePanel(QWidget):
         self.log = QTextEdit()
         self.log.setReadOnly(True)
         self.log.setLineWrapMode(QTextEdit.NoWrap)
-        self.log.setMaximumHeight(200)
+        self.log.setMinimumHeight(110)
+        self.log.setMaximumHeight(260)
         lv.addWidget(self.log)
         left.addWidget(lg)
-        hsplit.addLayout(left, 0)
+        # 左列放进滚动区：小窗口时参数列表可滚动，底部日志不再被挤掉
+        left_widget = QWidget()
+        left_widget.setLayout(left)
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setFrameShape(QFrame.NoFrame)
+        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        left_scroll.setMinimumWidth(430)
+        left_scroll.setWidget(left_widget)
+        hsplit.addWidget(left_scroll, 0)
 
         # 右侧：三线叠加图（图占满右列，不被参数压扁）
         if _MPL_OK:
@@ -554,7 +565,9 @@ class TunePanel(QWidget):
         else:
             hsplit.addWidget(QLabel("(未安装 matplotlib，实时图禁用)"))
 
-        self.resize(1180, 760)
+        scr = QApplication.primaryScreen().availableGeometry()
+        self.resize(min(1500, scr.width() - 60), min(950, scr.height() - 80))
+        self.setMinimumSize(980, 620)
 
     # ---------- CSV ----------
     def open_csv(self):
@@ -1198,6 +1211,11 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
 
 
 
