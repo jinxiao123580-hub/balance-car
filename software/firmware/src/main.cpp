@@ -1472,6 +1472,9 @@ const uint32_t FAST_TELEMETRY_DIVIDER = 100;  // 400Hz/100 = 4Hz（10Hz 时链�
 uint32_t fastTelemetryDivider = 0;
 // 收到命令后暂停遥测 400ms，把发送缓冲让给 PAR/参数回显（9600 波特下两者共用同一条 TX）
 uint32_t telemetryMuteUntilMs = 0;
+// BLE 接收诊断：面板是否真的把命令送到了车端（放在 4Hz 调试帧最后一列）
+uint32_t btRxBytes = 0;
+uint32_t btCmdCount = 0;
 
 // ============================================================
 // 非阻塞遥测 txBuffer（9600 波特很慢，直接 print 会阻塞 400Hz 控制循环）
@@ -4278,14 +4281,15 @@ void sendTelemetry()
 void sendFastTelemetry()
 {
     char line[96];
-    int n = snprintf(line, sizeof(line), "G,%lu,%d,%d,%d,%d,%d,%d",
+    int n = snprintf(line, sizeof(line), "G,%lu,%d,%d,%d,%d,%d,%d,%d",
         (unsigned long)millis(),
         (int)(vehiclePosition * 100.0f),
         (int)(vehicleSpeed * 1000.0f),
         (int)(pitch * 100.0f),
         (int)(targetBalanceAngle * 100.0f),
         (int)finalBalanceOutput,
-        (int)(manualForward.requested * 1000.0f));
+        (int)(manualForward.requested * 1000.0f),
+        (int)btRxBytes);
     if (n > 0)
         txPushLine(line, (uint16_t)n);
 }
@@ -4669,6 +4673,7 @@ void pollBtCommand()
     uint8_t readBudget = 32;
     while (readBudget-- && BTSerial.available() > 0) {
         char c = (char)BTSerial.read();
+        btRxBytes++;
         if (c == '\n' || c == '\r') {
             if (!btCmdOverflow) handleBtCommand(btCmdBuf, btCmdLen);
             btCmdOverflow = false;
@@ -5551,6 +5556,8 @@ void loop()
     uint32_t workUs = micros() - controlWorkStartUs;
     if (workUs > controlMaxWorkUs) controlMaxWorkUs = workUs;
 }
+
+
 
 
 

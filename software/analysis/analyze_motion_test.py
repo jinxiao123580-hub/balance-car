@@ -117,7 +117,7 @@ def main():
             fh.readline()
             for line in fh:
                 p = line.strip().split(",")
-                if len(p) != 7:
+                if len(p) < 7:
                     continue
                 ft.append(int(p[0]) / 1000.0)
                 fp.append(int(p[1]) / 100.0)
@@ -219,6 +219,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

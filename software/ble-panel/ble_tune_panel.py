@@ -64,7 +64,7 @@ def make_csv_path():
         OUT_DIR, f"ble_tune_log_{stamp}_{millis:03d}_p{os.getpid()}.csv")
 
 # 10Hz 调试帧 G 的列（与固件 sendFastTelemetry 一致）
-FAST_HEADERS = ["ms", "pos100", "speed1000", "pitch100", "target100", "finalHz", "manualReq1000"]
+FAST_HEADERS = ["ms", "pos100", "speed1000", "pitch100", "target100", "finalHz", "manualReq1000", "rxBytes"]
 
 # 遥测列（与固件 sendTelemetry 完整控制链一致，整数缩放）+ 参数列
 TELEM_COLS = [
@@ -337,6 +337,7 @@ class TunePanel(QWidget):
         self._motion_closed_loop = False   # 车端是否 MOTION=2（速度闭环前后）
         self._firmware_tag = "未知"        # 车端 FW= 回显，用于确认面板/固件是否同版
         self._par_seen = False             # 本次连接是否已收到 PAR
+        self._car_rx_bytes = 0             # 车端累计收到的 BLE 字节（诊断写入通道）
         self._par_retries = 0              # PAR 补问次数
         self._move_supported = False
         self._turn_zero_pending = False
@@ -848,6 +849,12 @@ class TunePanel(QWidget):
         # 10Hz 调试帧：只落盘，不进主 CSV/绘图
         if s.startswith("G,"):
             self._last_telemetry = time.monotonic()
+            parts = s.split(",")
+            if len(parts) >= 9:
+                try:
+                    self._car_rx_bytes = int(parts[8])
+                except ValueError:
+                    pass
             if self.fast_f:
                 try:
                     self.fast_f.write(s[2:] + "\n")
@@ -916,7 +923,8 @@ class TunePanel(QWidget):
                     + " P/D=" + (tail[5] if len(tail) > 5 else "?") + "/" + (tail[6] if len(tail) > 6 else "?")
                     + " direct=" + (tail[11] if len(tail) > 11 else "?")
                     + " mix/lim/final=" + (tail[13] if len(tail) > 13 else "?") + "/"
-                    + (tail[14] if len(tail) > 14 else "?") + "/" + (tail[15] if len(tail) > 15 else "?"))
+                    + (tail[14] if len(tail) > 14 else "?") + "/" + (tail[15] if len(tail) > 15 else "?")
+                    + " rx=" + str(self._car_rx_bytes))
             self.log.append(show)
             self.push_plot(s)
             self._refresh_motion_controls()
@@ -1190,6 +1198,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
