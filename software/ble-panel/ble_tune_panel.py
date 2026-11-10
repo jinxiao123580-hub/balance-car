@@ -343,6 +343,8 @@ class TunePanel(QWidget):
         self._motion_closed_loop = False   # 车端是否 MOTION=2（速度闭环前后）
         self._firmware_tag = "未知"        # 车端 FW= 回显，用于确认面板/固件是否同版
         self._par_seen = False             # 本次连接是否已收到 PAR
+        self._param_saved = False          # 车端 PAR 的 SAVED=1/0（参数是否已存进 flash）
+        self._param_persist_supported = False   # 固件是否支持 SAVE/LOAD/DEF（PAR 里有 SAVED=）
         self._car_rx_bytes = 0             # 车端累计收到的 BLE 字节（诊断写入通道）
         self._par_retries = 0              # PAR 补问次数
         self._move_supported = False
@@ -383,6 +385,18 @@ class TunePanel(QWidget):
         self.btn_all.clicked.connect(self.send_all)
         self.btn_capture = QPushButton("当前位置设为回位点")
         self.btn_capture.clicked.connect(self.capture_position)
+        # 参数持久化（2026-11-10）：改完参数发 SAVE 写进车端 flash，断电不丢，
+        # 不再需要为了留住一组整定值去接 ST-Link 重烧。
+        self.btn_save = QPushButton("保存到车端")
+        self.btn_save.setToolTip("把车端当前 22 项参数写入 STM32 内部 flash（需车静止）")
+        self.btn_save.clicked.connect(self.do_save)
+        self.btn_load = QPushButton("从车端读回")
+        self.btn_load.setToolTip("用 flash 里已保存的一组覆盖车端当前参数")
+        self.btn_load.clicked.connect(self.do_load)
+        self.btn_def = QPushButton("恢复出厂值")
+        self.btn_def.setToolTip("只在车端 RAM 里恢复编译默认值，不覆盖已保存记录")
+        self.btn_def.clicked.connect(self.do_def)
+        self.save_state = QLabel("参数：未同步")
         self.btn_new_record = QPushButton("开始新录制")
         self.btn_new_record.clicked.connect(self.start_new_recording)
         self.btn_stop_record = QPushButton("停止录制")
@@ -392,6 +406,8 @@ class TunePanel(QWidget):
         top.addWidget(self.btn_new_record); top.addWidget(self.btn_stop_record)
         top.addWidget(self.btn_conn); top.addWidget(self.btn_ask)
         top.addWidget(self.btn_all); top.addWidget(self.btn_capture)
+        top.addWidget(self.btn_save); top.addWidget(self.btn_load); top.addWidget(self.btn_def)
+        top.addWidget(self.save_state)
         outer.addLayout(top)
 
         steering = QHBoxLayout()
@@ -892,6 +908,9 @@ class TunePanel(QWidget):
             # 固件版本标记（FW=yyyyMMdd）：用于一眼确认"面板与固件是否同一版"
             fw = next((c.split("=", 1)[1] for c in caps if c.startswith("FW=")), "")
             self._firmware_tag = fw or "未知"
+            # SAVED=1：车端 RAM 参数与 flash 记录一致；0：改过没存（橙色提示）
+            saved = next((c.split("=", 1)[1] for c in caps if c.startswith("SAVED=")), "")
+            self._update_saved_state(saved)
             fw_suffix = f" · FW={self._firmware_tag}"
             if self._motion_closed_loop:
                 self.motion_mode_label.setText("车端：速度闭环前后就绪" + fw_suffix)
@@ -978,6 +997,43 @@ class TunePanel(QWidget):
 
     def do_ask(self):
         self.run_coro(self.ble.send("?"), "回显")
+
+    def _update_saved_state(self, flag):
+        """按车端 PAR 里的 SAVED= 更新持久化提示；旧固件没有该字段就禁用按钮。"""
+        self._param_persist_supported = flag in ("0", "1")
+        self._param_saved = flag == "1"
+        for button in (self.btn_save, self.btn_load, self.btn_def):
+            button.setEnabled(self._param_persist_supported)
+        if not self._param_persist_supported:
+            self.save_state.setText("参数：固件无 SAVE")
+            self.save_state.setStyleSheet("color:#999;")
+        elif self._param_saved:
+            self.save_state.setText("参数：已存车端")
+            self.save_state.setStyleSheet("color:#2e7d32;")
+        else:
+            self.save_state.setText("参数：未保存，点「保存到车端」")
+            self.save_state.setStyleSheet("color:#ef6c00;")
+
+    async def _persist_sequence(self, command, label):
+        """整词命令 -> 等车端写完 flash -> 再问一次 ?，用 SAVED= 刷新提示。"""
+        if not await self.ble.send(command):
+            self.status.setText(f"{label}下发失败")
+            return
+        # 写 flash 时固件会停住取指（单条约 0.5ms，换扇区擦除可到 1s），等它写完再问
+        await asyncio.sleep(0.30)
+        await self.ble.send("?")
+
+    def do_save(self):
+        self.status.setText("正在把参数写进车端 flash…")
+        self.run_coro(self._persist_sequence("SAVE", "保存"), "保存到车端")
+
+    def do_load(self):
+        self.status.setText("正在用 flash 里的一组覆盖车端参数…")
+        self.run_coro(self._persist_sequence("LOAD", "读回"), "从车端读回")
+
+    def do_def(self):
+        self.status.setText("正在恢复车端编译默认值（不覆盖已存记录）…")
+        self.run_coro(self._persist_sequence("DEF", "恢复默认"), "恢复出厂值")
 
     def _preview_val(self, cn, v):
         return v / self.ctrl[cn]["scale"]

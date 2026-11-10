@@ -14,7 +14,10 @@
 // 的真实摆动，不是传感器白噪声，Kalman 抹不掉，只能换成"更长窗口的净速度"。
 // 因此：满档速度/前馈/上限一起抬高，运动环改用 200ms 净速度 + 3 点中值抑制单拍跳变。
 struct MotionSpeedProfile {
-    static constexpr float maxSpeed = 8.0f;  // count/50ms，约 160 count/s（满档）
+    // 2026-11-10：满档 8.0 证伪 —— gear 1.5(vref 6) 双向不一致、2.0 冲出 12.65°。
+    // 受控速度上限落在 vref 4~5 之间（gear 1.0 可重复跟踪），满档降到 5.0，
+    // 于是 2.0 档的目标速度 = 5 count/50ms = 100 count/s，落在已验证的区间内。
+    static constexpr float maxSpeed = 5.0f;  // count/50ms，约 100 count/s（满档）
     static constexpr float accel    = 20.0f;  // count/50ms per s，0→满速约 0.5 s
     float applied = 0.0f;
     void reset() { applied = 0.0f; }

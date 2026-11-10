@@ -2,7 +2,12 @@
 from pathlib import Path
 import subprocess,tempfile,re
 root=Path(__file__).resolve().parents[1];s=(root/"src/main.cpp").read_text(encoding="utf-8-sig")
-a=s.index("void handleBtCommand(char* cmd, uint8_t len)\n{");a=s.index("    QueuedBtReply reply;",a);b=s.index("    if (key == '?')",a);prefix=s[a:b]
+a=s.index("void handleBtCommand(char* cmd, uint8_t len)\n{");reply=s.index("    QueuedBtReply reply;",a);b=s.index("    if (key == '?')",reply)
+# 2026-11-10：`?` 之前新增了 SAVE/LOAD/DEF 整词分支（依赖 flash 驱动，主机上没有）。
+# 从"跳过前导空格"接回来，被测的 jog/诊断路由与原来一致；整词命令本身由
+# test/run_param_store_regressions.py 覆盖。
+skip=s.index("    // 跳过前导空格",reply)
+prefix=s[reply:reply+len("    QueuedBtReply reply;")]+"\n"+s[skip:b]
 diag=re.search(r"    if \(key == '!'[^\n]+",s).group(0)
 a=s.index("    if (vlen == 0) return;",b);b=s.index("    if(key=='~' || key=='&')",a);config=s[a:b]
 mock=r'''

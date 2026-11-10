@@ -50,3 +50,6 @@ _inbox/
 
 # 本地临时工作目录
 tmp/
+
+# 分层记忆（本机路径，不入库）—— 见 ~/.dsh/skills/context-memory
+.dsh/

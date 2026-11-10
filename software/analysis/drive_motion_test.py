@@ -176,11 +176,12 @@ async def run(args):
 
         async def hold(gear, seconds, label):
             print(f"[动作] {label} gear={gear} {seconds}s")
-            await car.send(f"^ 0,{gear}")
             end = time.monotonic() + seconds
+            # 固件 350 ms 没刷新就撤销请求，所以按住期间必须持续重发
             while time.monotonic() < end:
                 if stop["flag"]:
                     break
+                await car.send(f"^ 0,{gear}")
                 await asyncio.sleep(0.05)
             await car.send("^ 0,0")
             await asyncio.sleep(args.settle)
