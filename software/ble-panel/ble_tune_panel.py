@@ -364,6 +364,8 @@ class TunePanel(QWidget):
     # ---------- UI ----------
     def build_ui(self):
         outer = QVBoxLayout(self)
+        # 底部留 24px：即使窗口被拉到任务栏下方，日志框也不会被盖住
+        outer.setContentsMargins(8, 8, 8, 24)
         top = QHBoxLayout()
         self.status = QLabel("未连接")
         self.record_status = QLabel("录制：准备中")
@@ -471,7 +473,15 @@ class TunePanel(QWidget):
             self.ctrl[cmd] = {"box": box, "sl": sl, "dec": dec,
                               "lo": lo, "hi": hi, "cmt": cmt, "car": car,
                               "scale": scale, "dflt": dflt}
-        left.addLayout(grid)
+        # 参数表放进滚动区：窗口变矮时只滚动参数，底部日志始终可见
+        params_widget = QWidget()
+        params_widget.setLayout(grid)
+        params_scroll = QScrollArea()
+        params_scroll.setWidgetResizable(True)
+        params_scroll.setFrameShape(QFrame.NoFrame)
+        params_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        params_scroll.setWidget(params_widget)
+        left.addWidget(params_scroll, 1)
 
         # 批量文本参数：允许直接粘贴
         # P=850 D=10 O=-0.05 ... 或每行一个“P 850”。
@@ -497,17 +507,8 @@ class TunePanel(QWidget):
         self.log.setMinimumHeight(110)
         self.log.setMaximumHeight(260)
         lv.addWidget(self.log)
-        left.addWidget(lg)
-        # 左列放进滚动区：小窗口时参数列表可滚动，底部日志不再被挤掉
-        left_widget = QWidget()
-        left_widget.setLayout(left)
-        left_scroll = QScrollArea()
-        left_scroll.setWidgetResizable(True)
-        left_scroll.setFrameShape(QFrame.NoFrame)
-        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        left_scroll.setMinimumWidth(430)
-        left_scroll.setWidget(left_widget)
-        hsplit.addWidget(left_scroll, 0)
+        left.addWidget(lg, 0)
+        hsplit.addLayout(left, 0)
 
         # 右侧：三线叠加图（图占满右列，不被参数压扁）
         if _MPL_OK:
@@ -1211,6 +1212,9 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
 
 
 
