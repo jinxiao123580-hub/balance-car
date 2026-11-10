@@ -73,7 +73,7 @@ class Car:
                 p = line.split(",")
                 if len(p) > self.idx.get("fallStopCount", -1) + 1:
                     try:
-                        self.fall = int(p[self.idx["fallStopCount"] + 1])
+                        self.fall = int(p[self.idx["fallStopCount"]])
                     except Exception:
                         pass
 
@@ -112,9 +112,11 @@ async def run(args):
     async with BleakClient(address, timeout=30.0) as client:
         car = Car(client, idx)
         await client.start_notify(FFE1, car.on_data)
-        for _ in range(50):
+        for i in range(80):
             if car.par:
                 break
+            if i % 15 == 14:
+                await car.send("?")
             await asyncio.sleep(0.2)
         print(f"[PAR] {car.par or '未收到'}")
 
@@ -123,6 +125,9 @@ async def run(args):
             await car.send(f"{letter} {float(value):.3f}")
             print(f"[参数] {letter} = {value}")
         await asyncio.sleep(0.4)
+        # 固件上电后要求先收到一次零命令才接受运动请求
+        await car.send("^ 0,0")
+        await asyncio.sleep(0.2)
         await car.send("?")
         await asyncio.sleep(0.3)
 
@@ -135,7 +140,7 @@ async def run(args):
         fast_f = open(fast_path, "w", newline="", encoding="utf-8")
         main_w = csv.writer(main_f)
         main_w.writerow(header)
-        fast_f.write("ms,pos100,speed1000,pitch100,target100,finalHz,manualReq1000\n")
+        fast_f.write("ms,pos100,speed1000,pitch100,target100,finalHz,manualReq1000,rxBytes\n")
         handled = 0
 
         def flush(since):
@@ -144,7 +149,11 @@ async def run(args):
                 line = car.lines[handled]
                 handled += 1
                 if line.startswith("D,"):
-                    main_w.writerow(line[2:].split(","))
+                    # 面板 CSV = 主机时间戳 + 74 列遥测 + 22 列参数；驱动不读参数，补空
+                    row = [f"{time.time():.1f}"] + line[2:].split(",")
+                    if len(row) < len(header):
+                        row += [""] * (len(header) - len(row))
+                    main_w.writerow(row[:len(header)])
                 elif line.startswith("G,"):
                     fast_f.write(line[2:] + "\n")
 
@@ -182,7 +191,12 @@ async def run(args):
                     item = item.strip().upper()
                     if stop["flag"]:
                         break
-                    if item == "T1":
+                    if item == "T0":
+                        print(f"[动作] rep{rep} 静止观察 {args.hold}s")
+                        end = time.monotonic() + args.hold
+                        while time.monotonic() < end and not stop["flag"]:
+                            await asyncio.sleep(0.05)
+                    elif item == "T1":
                         await hold(args.gear, args.hold, f"rep{rep} 前进")
                     elif item == "T2":
                         await hold(-args.gear, args.hold, f"rep{rep} 后退")
@@ -230,4 +244,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
 

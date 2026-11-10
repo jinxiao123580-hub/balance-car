@@ -4812,7 +4812,8 @@ void handleBtCommand(char* cmd, uint8_t len)
             return;
         }
         if(key=='@' && (turn!=0 || forward!=0)){reply.println("ERR:use fixed-angle ^ command");return;}
-        if(forward!=0 && fabsf(forward)!=ManualPitchControl::maxAngle){reply.println("ERR:forward angle must be +/-2");return;}
+        // 2026-11-10: forward is a speed gear now, accept 0..maxAngle instead of only +/-2
+        if(forward!=0 && fabsf(forward)>ManualPitchControl::maxAngle){reply.println("ERR:forward gear out of range");return;}
         if(turn!=0 && positionJog.active)stopPositionJog(PositionJog::STOP);
         if(forward!=0 && !manualForward.busy(millis())){
             float currentOffset=targetBalanceAngle-balanceAngleOffset;
@@ -5566,6 +5567,7 @@ void loop()
     uint32_t workUs = micros() - controlWorkStartUs;
     if (workUs > controlMaxWorkUs) controlMaxWorkUs = workUs;
 }
+
 
 
 
