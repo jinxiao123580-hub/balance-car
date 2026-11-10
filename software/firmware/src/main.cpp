@@ -1464,9 +1464,12 @@ uint32_t outerLoopDivider = 0;
 
   
 
-const uint32_t TELEMETRY_DIVIDER = 200;  // 400Hz/200 = 2Hz；扩展控制链遥测后仍控制在9600波特预算内
+const uint32_t TELEMETRY_DIVIDER = 400;  // 400Hz/400 = 1Hz；剩余带宽给下面的 10Hz 调试帧（总输出受 800 B/s 预算限制）
 
 uint32_t telemetryDivider = 0;
+// 10Hz 快速帧：只发量化速度跟踪/姿态需要的 7 个量，避免完整帧占满 9600 波特
+const uint32_t FAST_TELEMETRY_DIVIDER = 40;   // 400Hz/40 = 10Hz
+uint32_t fastTelemetryDivider = 0;
 
 // ============================================================
 // 非阻塞遥测 txBuffer（9600 波特很慢，直接 print 会阻塞 400Hz 控制循环）
@@ -4270,6 +4273,21 @@ void sendTelemetry()
 
   
 
+void sendFastTelemetry()
+{
+    char line[96];
+    int n = snprintf(line, sizeof(line), "G,%lu,%d,%d,%d,%d,%d,%d",
+        (unsigned long)millis(),
+        (int)(vehiclePosition * 100.0f),
+        (int)(vehicleSpeed * 1000.0f),
+        (int)(pitch * 100.0f),
+        (int)(targetBalanceAngle * 100.0f),
+        (int)finalBalanceOutput,
+        (int)(manualForward.requested * 1000.0f));
+    if (n > 0)
+        txPushLine(line, (uint16_t)n);
+}
+
 void setup()
 
 {
@@ -5098,7 +5116,13 @@ void loop()
   
 
         sendTelemetry();
+    }
 
+    fastTelemetryDivider++;
+    if (fastTelemetryDivider >= FAST_TELEMETRY_DIVIDER)
+    {
+        fastTelemetryDivider = 0;
+        sendFastTelemetry();
     }
 
   
@@ -5525,3 +5549,8 @@ void loop()
     uint32_t workUs = micros() - controlWorkStartUs;
     if (workUs > controlMaxWorkUs) controlMaxWorkUs = workUs;
 }
+
+
+
+
+

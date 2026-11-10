@@ -90,6 +90,8 @@ def main():
     ap.add_argument("--markdown", action="store_true")
     ap.add_argument("--md-out", help="把 markdown 表格写入文件")
     ap.add_argument("--min-hold", type=float, default=1.0, help="忽略短于该时长的按住（秒）")
+    ap.add_argument("--fast", help="10Hz 调试帧文件（*.fast.csv）；给了就用它算时域指标")
+    ap.add_argument("--offset", type=float, help="平衡点 O（deg）；默认从主 CSV 读取")
     args = ap.parse_args()
 
     idx, rows = load(args.csv)
@@ -107,6 +109,28 @@ def main():
     for i in range(1, n):
         dt = t[i] - t[i - 1]
         v[i] = (pos[i] - pos[i - 1]) / dt * 0.05 if dt > 0 else 0.0
+
+    # 10Hz 快速帧优先：0.1 s 分辨率，远好于 2 Hz 主帧
+    if args.fast:
+        ft, fp, fv, fpi, fcm, ffi = [], [], [], [], [], []
+        with open(args.fast, encoding="utf-8-sig") as fh:
+            fh.readline()
+            for line in fh:
+                p = line.strip().split(",")
+                if len(p) != 7:
+                    continue
+                ft.append(int(p[0]) / 1000.0)
+                fp.append(int(p[1]) / 100.0)
+                fv.append(int(p[2]) / 1000.0)
+                fpi.append(int(p[3]) / 100.0)
+                fcm.append(int(p[6]) / 1000.0)
+                ffi.append(int(p[5]))
+        if len(ft) >= 3:
+            t, pos, v, pitch, cmd, fin = ft, fp, fv, fpi, fcm, ffi
+            n = len(t)
+            gyro = [0.0] * n
+            o = [args.offset if args.offset is not None else (o[0] if o else 0.0)] * n
+            print(f"# 使用 10Hz 快速帧 {args.fast}: {n} 采样, O={o[0]:.2f}")
 
     results = []
     for sign, a, b in segments(cmd):
@@ -195,5 +219,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 

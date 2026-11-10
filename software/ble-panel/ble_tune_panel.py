@@ -63,6 +63,9 @@ def make_csv_path():
     return os.path.join(
         OUT_DIR, f"ble_tune_log_{stamp}_{millis:03d}_p{os.getpid()}.csv")
 
+# 10Hz 调试帧 G 的列（与固件 sendFastTelemetry 一致）
+FAST_HEADERS = ["ms", "pos100", "speed1000", "pitch100", "target100", "finalHz", "manualReq1000"]
+
 # 遥测列（与固件 sendTelemetry 完整控制链一致，整数缩放）+ 参数列
 TELEM_COLS = [
     "ms", "pitch100", "gyro100", "target100",
@@ -306,6 +309,8 @@ class TunePanel(QWidget):
         self.csv_f = None
         self.csv_w = None
         self.csv_path = None
+        self.fast_f = None
+        self.fast_path = None
         self.csv_rows = 0
         self.csv_recording = False
         self.csv_error = ""
@@ -555,6 +560,11 @@ class TunePanel(QWidget):
             self._close_csv_locked()
             self.csv_path = make_csv_path()
             self.csv_f = open(self.csv_path, "x", newline="", encoding="utf-8")
+            # 10Hz 调试帧单独落盘：同名 .fast.csv，列见 FAST_HEADERS
+            self.fast_path = os.path.splitext(self.csv_path)[0] + ".fast.csv"
+            self.fast_f = open(self.fast_path, "x", newline="", encoding="utf-8")
+            self.fast_f.write(",".join(FAST_HEADERS) + "\n")
+            self.fast_f.flush()
             self.csv_w = csv.writer(self.csv_f)
             self.csv_w.writerow(CSV_HEADERS)
             self.csv_f.flush()
@@ -642,6 +652,13 @@ class TunePanel(QWidget):
             pass
         self.csv_f = None
         self.csv_w = None
+        try:
+            if self.fast_f:
+                self.fast_f.flush()
+                self.fast_f.close()
+        except Exception:
+            pass
+        self.fast_f = None
 
     def close_csv(self):
         with self.log_lock:
@@ -802,6 +819,16 @@ class TunePanel(QWidget):
     def on_telem(self, s):
         s = s.strip("\r\n")
         if not s:
+            return
+        # 10Hz 调试帧：只落盘，不进主 CSV/绘图
+        if s.startswith("G,"):
+            self._last_telemetry = time.monotonic()
+            if self.fast_f:
+                try:
+                    self.fast_f.write(s[2:] + "\n")
+                    self.fast_f.flush()
+                except Exception:
+                    pass
             return
         # 解析固件 "?" 回显：PAR: P=900.00 D=9.0 O=-2.00 ... -> 同步到面板初值
         if s.startswith("PAR:"):
@@ -1137,5 +1164,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
 
 

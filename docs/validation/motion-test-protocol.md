@@ -37,11 +37,22 @@
 - 同一天内不要在测试中途改 `O`、`X`、`K`；
 - 面板保持“录制中”，测试结束后停止录制，得到的 CSV 就是分析输入。
 
-## 3. 分析命令
+## 3. 数据文件（2026-11-10 起）
+
+启用 10 Hz 调试帧后，一次录制会生成两个文件：
+
+| 文件 | 内容 | 速率 |
+| --- | --- | --- |
+| `ble_tune_log_*.csv` | 完整遥测（97 列，含 O/X/Y 等参数） | 1 Hz |
+| `ble_tune_log_*.fast.csv` | `ms,pos100,speed1000,pitch100,target100,finalHz,manualReq1000` | 10 Hz |
+
+分析时优先用快速帧（0.1 s 分辨率）；O 仍从主 CSV 取，或用 `--offset` 直接指定。
+
+## 4. 分析命令
 
 ```powershell
 cd "D:\AI项目总库\02_机器人与机械工程\PlatformIO项目\pinghengche\balance-car-showcase"
-python software\analysis\analyze_motion_test.py "docs\validation\recordings\<文件>.csv" --max-speed 8 --markdown
+python software\analysis\analyze_motion_test.py "docs\validation\recordings\<文件>.csv" --fast "docs\validation\recordings\<文件>.fast.csv" --max-speed 8 --markdown
 ```
 
 `--max-speed` 必须与固件当前 `MotionSpeedProfile::maxSpeed` 一致（默认 8）；`--md-out 结果.md` 可直接出表，
@@ -69,3 +80,4 @@ python software\analysis\analyze_motion_test.py "docs\validation\recordings\<文
 - `v_meas` 是 0.5 s 差分，天然平滑，真实的 100 Hz 速度环行为看不到；
 - 需要更细的动力学（例如判断阶跃响应的振荡频率）时，先启用固件里已设计的 20 Hz 调试帧
   （见 `.dsh/memory/decisions.md` 2026-11-04 条），再按同一脚本分析。
+
