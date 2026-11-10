@@ -4782,11 +4782,69 @@ static ParamWordCommand paramWordCommand(const char* cmd, uint8_t len) {
     return PARAM_WORD_NONE;
 }
 
-static char btCmdBuf[48];
-static uint8_t btCmdLen = 0;
+static char btCmdBuf[48];static uint8_t btCmdLen = 0;
 static bool btCmdOverflow = false;
 
 void handleBtCommand(char* cmd, uint8_t len);   // 前置声明
+
+// ------------------------------------------------------------
+// 运行时可调的运动环增益（2026-11-10）：TF/TB/EG + 数值
+//   TF <deg>   MotionLeanControl::forwardTrim   前进方向配平
+//   TB <deg>   MotionLeanControl::backwardTrim  后退方向配平
+//   EG <deg>   MotionLeanControl::errorGain     速度误差→倾角增益
+// 为什么用两字母：A~Z 已被 22 项面板参数加 C/V/Q/A 全部占满，再开单字母会和
+// PAR 回显/面板解析打架；两字母整词既不误命中，也不动 97 列 CSV 契约。
+// 这三个量故意只改 RAM、不写 flash：它们是"试的时候改"，定下来再进参数表。
+// ------------------------------------------------------------
+static bool handleTunableCommand(const char* cmd, uint8_t len, QueuedBtReply& reply)
+{
+    uint8_t lead = 0;
+    while (lead < len && cmd[lead] == ' ') ++lead;          // 前导空格
+    if (len < lead + 2) return false;
+    if (lead + 2 < len && cmd[lead + 2] != ' ' && cmd[lead + 2] != '\t') return false;
+    const char a = (char)toupper((unsigned char)cmd[lead]);
+    const char b = (char)toupper((unsigned char)cmd[lead + 1]);
+    const bool isForwardTrim  = (a == 'T' && b == 'F');
+    const bool isBackwardTrim = (a == 'T' && b == 'B');
+    const bool isErrorGain    = (a == 'E' && b == 'G');
+    if (!isForwardTrim && !isBackwardTrim && !isErrorGain) return false;
+
+    uint8_t vstart = lead + 2;
+    while (vstart < len && (cmd[vstart] == ' ' || cmd[vstart] == '\t')) ++vstart;
+    if (vstart >= len) { reply.println("ERR:TF/TB/EG need a number"); return true; }
+    char vbuf[16];
+    uint8_t vlen = 0;
+    for (uint8_t i = vstart; i < len && vlen + 1u < sizeof(vbuf); ++i) {
+        const char c = cmd[i];
+        if (c == ' ' || c == '\t' || c == '\r' || c == '\n') continue;
+        vbuf[vlen++] = c;
+    }
+    vbuf[vlen] = '\0';
+    char* end = nullptr;
+    const float value = strtof(vbuf, &end);
+    // 用区间判断挡 NaN/Inf，而不是 isfinite()：后者在主机回归里没有非限定声明
+    if (end == vbuf || *end != '\0' || !(value > -1.0e6f && value < 1.0e6f)) {
+        reply.println("ERR:TF/TB/EG need a number");
+        return true;
+    }
+
+    if (isForwardTrim) {
+        motionLean.forwardTrim = ManualTurnControl::clamp(value, -1.0f, 1.0f);
+    } else if (isBackwardTrim) {
+        motionLean.backwardTrim = ManualTurnControl::clamp(value, -1.0f, 1.0f);
+    } else {
+        // 误差增益开太大等于把 0.9° 上限一步打满，只允许 0~0.15
+        motionLean.errorGain = ManualTurnControl::clamp(value, 0.0f, 0.15f);
+    }
+    reply.print("TRIM ");
+    reply.print(motionLean.forwardTrim, 3);
+    reply.print(' ');
+    reply.print(motionLean.backwardTrim, 3);
+    reply.print(" EG ");
+    reply.print(motionLean.errorGain, 3);
+    reply.println();
+    return true;
+}
 
 void pollBtCommand()
 {
@@ -4809,6 +4867,8 @@ void pollBtCommand()
 void handleBtCommand(char* cmd, uint8_t len)
 {
     QueuedBtReply reply;
+    // 运行时可调增益先拦（TF/TB/EG），它们在下面被拆成单字母之前必须命中
+    if (handleTunableCommand(cmd, len, reply)) return;
     // 整词命令先拦截：SAVE/LOAD/DEF 没有数值，若走下面的"key + 值"解析会被
     // 拆成 S+"AVE"、L+"OAD"、D+"EF" 然后被数值守卫静默丢弃。
     switch (paramWordCommand(cmd, len)) {
@@ -4887,6 +4947,10 @@ void handleBtCommand(char* cmd, uint8_t len)
         reply.print(" X="); reply.print(positionKp, 4);
         reply.print(" Y="); reply.print(MAX_POSITION_RETURN_SPEED, 2);
         reply.print(" M="); reply.print(POSITION_DEADBAND_COUNT, 2);
+        // 运动环的运行时增益（TF/TB/EG 可以改，格式用 / 分隔，避免被当成单字母参数）
+        reply.print(" TRIM="); reply.print(motionLean.forwardTrim, 3);
+        reply.print('/'); reply.print(motionLean.backwardTrim, 3);
+        reply.print(" EG="); reply.print(motionLean.errorGain, 3);
         // SAVED=1：当前 RAM 参数与 flash 记录一致；0：改过没存（面板显示橙色提示）
         reply.print(" SAVED="); reply.print(paramDirty ? 0 : (paramSaved ? 1 : 0));
         reply.println();

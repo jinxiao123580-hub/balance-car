@@ -231,6 +231,73 @@ int main() {
 }
 '''
 
+TUNE_HEAD = r'''
+#include "motion_drive.h"
+#include <cassert>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
+MotionLeanControl motionLean;
+struct QueuedBtReply {
+    template <class... T> void print(T...) {}
+    template <class... T> void println(T...) {}
+};
+'''
+
+TUNE_CASES = r'''
+static QueuedBtReply stub;
+
+static bool run(const char* text) {
+    return handleTunableCommand(text, static_cast<uint8_t>(std::strlen(text)), stub);
+}
+
+static bool near(float a, float b) { return std::fabs(a - b) <= 1e-4f; }
+
+int main() {
+    // 1) 三个量都能下发
+    assert(run("TF 0.30"));
+    assert(near(motionLean.forwardTrim, 0.30f));
+    assert(run("TB -0.25"));
+    assert(near(motionLean.backwardTrim, -0.25f));
+    assert(run("EG 0.09"));
+    assert(near(motionLean.errorGain, 0.09f));
+
+    // 2) 大小写、前后空白都接受
+    assert(run("  tb 0.40  "));
+    assert(near(motionLean.backwardTrim, 0.40f));
+    assert(run("eg 0.05"));
+    assert(near(motionLean.errorGain, 0.05f));
+
+    // 3) 越界要夹住，而不是原样写进去
+    assert(run("TF 5"));
+    assert(near(motionLean.forwardTrim, 1.0f));
+    assert(run("EG 0.5"));
+    assert(near(motionLean.errorGain, 0.15f));
+    assert(run("EG -1"));
+    assert(near(motionLean.errorGain, 0.0f));
+    motionLean.errorGain = 0.05f;
+
+    // 4) 坏数值不许改状态
+    float keep = motionLean.forwardTrim;
+    assert(run("TF"));                 // 缺数值
+    assert(run("TF abc"));             // 不是数
+    assert(run("TF 1,5"));             // 逗号
+    assert(near(motionLean.forwardTrim, keep));
+
+    // 5) 不能抢单字母命令和别的词
+    assert(!run("P 900"));
+    assert(!run("T 0.5"));
+    assert(!run("TFX 1"));
+    assert(!run(""));
+    assert(!run("SAVE"));
+
+    puts("tunable command regressions OK");
+    return 0;
+}
+'''
+
 WORD_HEAD = r'''
 #include <cassert>
 #include <cctype>
@@ -272,6 +339,14 @@ def extract_word_command():
     return text[start:end]
 
 
+def extract_tunable():
+    """从 main.cpp 抓 handleTunableCommand 的真实实现（TF/TB/EG 路由）。"""
+    text = (src / "main.cpp").read_text(encoding="utf-8-sig")
+    start = text.index("static bool handleTunableCommand")
+    end = text.index("\n}\n", start) + 3
+    return text[start:end]
+
+
 def main():
     with tempfile.TemporaryDirectory() as tmp:
         cpp = Path(tmp) / "t.cpp"
@@ -293,6 +368,16 @@ def main():
             check=True,
         )
         subprocess.run([str(exe2)], check=True)
+
+        cpp3 = Path(tmp) / "tune.cpp"
+        exe3 = Path(tmp) / ("tune.exe" if sys.platform == "win32" else "tune")
+        cpp3.write_text(TUNE_HEAD + extract_tunable() + TUNE_CASES, encoding="utf-8")
+        subprocess.run(
+            ["g++", "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror",
+             f"-I{src}", str(cpp3), "-o", str(exe3)],
+            check=True,
+        )
+        subprocess.run([str(exe3)], check=True)
     return 0
 
 

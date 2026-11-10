@@ -101,7 +101,10 @@ struct MotionLeanControl {
     // 超速（-50 counts/50ms）→ 驻车环满权限 2° 刹车 → 机身 13° → 摔倒。
     // 降增益、降上限：静止满档也只到 1.2°，速度接近目标时只剩摩擦补偿。
     static constexpr float feedForwardGain = 0.06f;  // deg per (count/50ms) 参考速度：只补静摩擦
-    static constexpr float speedErrorGain  = 0.05f;  // deg per (count/50ms) 速度误差：主调节
+    static constexpr float speedErrorGain  = 0.05f;  // deg per (count/50ms) 速度误差：主调节（默认值）
+    // 2026-11-10：误差增益改成运行时可调（蓝牙 EG）。实测 vref 5 时稳态落在 6.7 c/50ms
+    // 而不是 5 —— 前馈 0.30° 一个人就把车推到超速，误差项 0.05 太软拉不回来。
+    float errorGain = speedErrorGain;
     static constexpr float limit           = 0.90f;  // deg，绝对上限（旧开环为 2°，且无反馈）
     static constexpr float engageRate      = 2.50f;  // deg/s
     static constexpr float releaseRate     = 3.50f;  // deg/s，释放段可以快一点
@@ -141,7 +144,7 @@ struct MotionLeanControl {
             bool forward = speedReference > trimDirectionDeadband;
             bool backward = speedReference < -trimDirectionDeadband;
             float trim = forward ? forwardTrim : (backward ? -backwardTrim : 0.0f);
-            float base = feedForwardGain * speedReference + speedErrorGain * speedError + trim;
+            float base = feedForwardGain * speedReference + errorGain * speedError + trim;
 
             float add = 0.0f;
             if (forward || backward) {
