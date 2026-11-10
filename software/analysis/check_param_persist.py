@@ -55,7 +55,17 @@ def parse_par(line):
     params = {}
     for m in re.finditer(r"(?:^|\s)([A-Z])=([-+]?[0-9]*\.?[0-9]+)", line):
         params[m.group(1)] = float(m.group(2))
-    return {"fw": fw, "saved": saved, "params": params}
+    # 2026-11-10：运动环运行时增益（TF/TB/EG），格式 TRIM=f/b EG=g
+    trim = re.search(r"TRIM=([-+0-9.]+)/([-+0-9.]+)", line)
+    eg = re.search(r"EG=([-+0-9.]+)", line)
+    return {
+        "fw": fw,
+        "saved": saved,
+        "params": params,
+        "trim_forward": float(trim.group(1)) if trim else None,
+        "trim_backward": float(trim.group(2)) if trim else None,
+        "error_gain": float(eg.group(1)) if eg else None,
+    }
 
 
 async def run(args):
@@ -118,6 +128,11 @@ async def run(args):
               + (f"  缺 {''.join(missing)}" if missing else ""))
         print("[值] " + " ".join(f"{k}={info['params'][k]:g}" for k in PARAM_ORDER
                                  if k in info["params"]))
+        if info["trim_forward"] is not None:
+            print(f"[配平] 前进 {info['trim_forward']:+.3f}°  后退 {info['trim_backward']:+.3f}°"
+                  f"  误差增益 {info['error_gain']:.3f}")
+        else:
+            print("[配平] 该固件还没有 TF/TB/EG 命令")
         if args.json:
             with open(args.json, "w", encoding="utf-8") as fh:
                 json.dump(info, fh, ensure_ascii=False, indent=2)

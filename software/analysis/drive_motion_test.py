@@ -189,7 +189,8 @@ async def run(args):
         guard_task = asyncio.create_task(guard())
 
         async def hold(gear, seconds, label):
-            print(f"[动作] {label} gear={gear} {seconds}s")
+            # 打印墙钟时间：相机在下位机、命令在本机，两边靠 time.time() 对齐
+            print(f"[动作] {label} gear={gear} {seconds}s  t0={time.time():.2f}")
             end = time.monotonic() + seconds
             # 固件 350 ms 没刷新就撤销请求，所以按住期间必须持续重发
             while time.monotonic() < end:
