@@ -336,6 +336,8 @@ class TunePanel(QWidget):
         self._car_speed = 0.0         # 车端实测速度 counts/50ms
         self._motion_closed_loop = False   # 车端是否 MOTION=2（速度闭环前后）
         self._firmware_tag = "未知"        # 车端 FW= 回显，用于确认面板/固件是否同版
+        self._par_seen = False             # 本次连接是否已收到 PAR
+        self._par_retries = 0              # PAR 补问次数
         self._move_supported = False
         self._turn_zero_pending = False
         self._turn_future = None
@@ -782,12 +784,35 @@ class TunePanel(QWidget):
             self._manual_requested = self._manual_applied = self._manual_rate = 0.0
             self._manual_resume = 1.0
             self._refresh_motion_controls()
+            self._par_seen = False
+            self._par_retries = 0
             self.run_coro(self.ble.send("?"), "查询固件转向能力")
+            self._schedule_par_retry()
         # 连接成功后清空绘图缓冲：避免旧会话与当前会话的数据线接在一起。
         # 每次成功建立/重连连接都会触发 on_msg("已连接 ✓...") 或 ("自动重连成功 ✓...")
         if ("已连接" in s and "✓" in s) or ("自动重连成功" in s):
             self.clear_plot_after_connect()
         self._refresh_motion_controls()
+
+    def _schedule_par_retry(self):
+        """连上后 3 s 内没收到 PAR 就再问两次：带宽较满时回显可能被挤掉。"""
+        if self._par_seen or self._par_retries >= 3:
+            if not self._par_seen:
+                self.motion_mode_label.setText(
+                    "未收到 PAR：固件可能未升级或回显丢包，点“? 回显”重试")
+                self.motion_mode_label.setStyleSheet("color:#c45100;")
+            return
+        self._par_retries += 1
+        QTimer.singleShot(3000, self._par_retry_tick)
+
+    def _par_retry_tick(self):
+        if self._par_seen:
+            return
+        if self._par_retries >= 3:
+            self._schedule_par_retry()
+            return
+        self.run_coro(self.ble.send("?"), "补问固件能力")
+        self._schedule_par_retry()
 
     def clear_plot_after_connect(self):
         """清空实时图缓冲并在图上复位，开启一段新的录制会话。"""
@@ -832,6 +857,7 @@ class TunePanel(QWidget):
             return
         # 解析固件 "?" 回显：PAR: P=900.00 D=9.0 O=-2.00 ... -> 同步到面板初值
         if s.startswith("PAR:"):
+            self._par_seen = True
             caps = s.split()
             self._turn_supported = "TURN=1" in caps or "TURN=2" in caps
             self._motion_closed_loop = "MOTION=2" in caps
@@ -1164,6 +1190,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
