@@ -1468,8 +1468,10 @@ const uint32_t TELEMETRY_DIVIDER = 400;  // 400Hz/400 = 1Hz；剩余带宽给下
 
 uint32_t telemetryDivider = 0;
 // 10Hz 快速帧：只发量化速度跟踪/姿态需要的 7 个量，避免完整帧占满 9600 波特
-const uint32_t FAST_TELEMETRY_DIVIDER = 40;   // 400Hz/40 = 10Hz
+const uint32_t FAST_TELEMETRY_DIVIDER = 100;  // 400Hz/100 = 4Hz（10Hz 时链路接近饱和，回显会被挤掉）
 uint32_t fastTelemetryDivider = 0;
+// 收到命令后暂停遥测 400ms，把发送缓冲让给 PAR/参数回显（9600 波特下两者共用同一条 TX）
+uint32_t telemetryMuteUntilMs = 0;
 
 // ============================================================
 // 非阻塞遥测 txBuffer（9600 波特很慢，直接 print 会阻塞 400Hz 控制循环）
@@ -5549,6 +5551,8 @@ void loop()
     uint32_t workUs = micros() - controlWorkStartUs;
     if (workUs > controlMaxWorkUs) controlMaxWorkUs = workUs;
 }
+
+
 
 
 
