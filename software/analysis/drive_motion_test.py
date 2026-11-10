@@ -51,13 +51,17 @@ class Car:
         self.target = None
         self.fall = 0
         self.par = None
+        self._buf = ""      # BLE 一次 notify 装不下整行（PAR 约 300 字符），必须自己拼
 
     def on_data(self, _sender, data):
         try:
             text = data.decode("utf-8", "replace")
         except Exception:
             return
-        for line in text.replace("\r", "\n").split("\n"):
+        # 2026-11-10：之前按 notify 边界切行，PAR 被截成两半，SAVED= 永远读不到
+        self._buf += text
+        *complete, self._buf = self._buf.replace("\r", "\n").split("\n")
+        for line in complete:
             line = line.strip()
             if not line:
                 continue
@@ -119,6 +123,16 @@ async def run(args):
                 await car.send("?")
             await asyncio.sleep(0.2)
         print(f"[PAR] {car.par or '未收到'}")
+        # 2026-11-10：先确认车上跑的是哪一版固件再动手。换过 maxSpeed 之后，
+        # 拿旧固件跑同一个档位会得到完全不同的目标速度（8 vs 5 counts/50ms）。
+        if args.require_fw:
+            if not car.par:
+                raise SystemExit("未收到 PAR，无法确认固件版本；不发送任何动作")
+            if f"FW={args.require_fw}" not in car.par:
+                raise SystemExit(f"固件版本不符：要求 FW={args.require_fw}，车上是 {car.par}")
+            print(f"[固件] FW={args.require_fw} 已确认")
+        if car.par and "SAVED=" in car.par:
+            print(f"[参数] {'已存车端' if 'SAVED=1' in car.par else '未保存到车端'}")
 
         for item in args.set or []:
             letter, value = item.split("=", 1)
@@ -238,6 +252,7 @@ def main():
     ap.add_argument("--settle", type=float, default=3.0, help="两段之间停顿 s")
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--max-dev", type=float, default=3.0, help="|pitch-O| 中止阈值 °")
+    ap.add_argument("--require-fw", default="", help="要求车端 FW= 标记，不符则不动车（如 20261110）")
     ap.add_argument("--out", required=True, help="输出文件名（不含扩展名）")
     args = ap.parse_args()
     sys.exit(asyncio.run(run(args)))
