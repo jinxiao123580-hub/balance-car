@@ -58,9 +58,10 @@ async def queue_check():
     b=panel.BleClient();sent=[]
     class Client:
         is_connected=True
-        async def write_gatt_char(self,h,v):sent.append(v)
+        async def write_gatt_char(self,h,v,**kw):sent.append(v)
     b.client=Client();b.handle=1;b._send_lock=asyncio.Lock();await b._send_lock.acquire()
     w._forward_value=2;task=asyncio.create_task(b.send(w.motion_command));await asyncio.sleep(0)
     w.stop_motion();b._send_lock.release();assert await task;assert sent==[b"^ 0,0\n"]
 asyncio.run(queue_check());w.close()
 print("PASS: MOTION=2 gating (old fixed-angle firmware stays disabled), speed gears, press/release, reverse, steering, focus/stale telemetry stop, latest queued stop and 49/56/57/63/65/71/74 CSV fields")
+

@@ -279,7 +279,12 @@ class BleClient:
                     value = text() if callable(text) else text
                     if not value:
                         return False
-                    await self.client.write_gatt_char(self.handle, value.encode("utf-8") + b"\n")
+                    payload = value.encode("utf-8") + b"\n"
+                    try:
+                        await self.client.write_gatt_char(self.handle, payload, response=True)
+                    except Exception:
+                        # 部分 JDY-23 固件的特征只支持 write-without-response
+                        await self.client.write_gatt_char(self.handle, payload, response=False)
                     return True
                 except Exception as e:
                     if self.conn_cb: self.conn_cb(f"发送失败 {str(e)[:40]}")
@@ -1212,6 +1217,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
