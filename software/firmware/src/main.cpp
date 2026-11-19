@@ -4815,11 +4815,12 @@ static bool handleTunableCommand(const char* cmd, uint8_t len, QueuedBtReply& re
     const char b = (char)toupper((unsigned char)cmd[lead + 1]);
     const bool isErrorGain    = (a == 'E' && b == 'G');
     const bool isSpeedCmd     = (a == 'S' && b == 'P');
-    if (!isErrorGain && !isSpeedCmd) return false;
+    const bool isSpeedKp      = (a == 'S' && b == 'V');   // 2026-11-19：速度环 P 增益在线可调
+    if (!isErrorGain && !isSpeedCmd && !isSpeedKp) return false;
 
     uint8_t vstart = lead + 2;
     while (vstart < len && (cmd[vstart] == ' ' || cmd[vstart] == '\t')) ++vstart;
-    if (vstart >= len) { reply.println("ERR:SP/EG need a number"); return true; }
+    if (vstart >= len) { reply.println("ERR:SP/SV/EG need a number"); return true; }
     char vbuf[16];
     uint8_t vlen = 0;
     for (uint8_t i = vstart; i < len && vlen + 1u < sizeof(vbuf); ++i) {
@@ -4832,7 +4833,7 @@ static bool handleTunableCommand(const char* cmd, uint8_t len, QueuedBtReply& re
     const float value = strtof(vbuf, &end);
     // 用区间判断挡 NaN/Inf，而不是 isfinite()：后者在主机回归里没有非限定声明
     if (end == vbuf || *end != '\0' || !(value > -1.0e6f && value < 1.0e6f)) {
-        reply.println("ERR:SP/EG need a number");
+        reply.println("ERR:SP/SV/EG need a number");
         return true;
     }
 
@@ -4840,6 +4841,13 @@ static bool handleTunableCommand(const char* cmd, uint8_t len, QueuedBtReply& re
         speedCmd = ManualTurnControl::clamp(value, -MAX_TARGET_FORWARD_SPEED, MAX_TARGET_FORWARD_SPEED);
         reply.print("SP ok ");
         reply.println(speedCmd, 3);
+        return true;
+    }
+    if (isSpeedKp) {
+        // 极性与大小都要试：允许 ±，限 ±0.5（SP=8 时 0.12 约合 1.0° 倾角）
+        speedKp = ManualTurnControl::clamp(value, -0.5f, 0.5f);
+        reply.print("SV ok ");
+        reply.println(speedKp, 4);
         return true;
     }
     {
@@ -4959,6 +4967,8 @@ void handleBtCommand(char* cmd, uint8_t len)
         reply.print(" SAVED="); reply.print(paramDirty ? 0 : (paramSaved ? 1 : 0));
         // SP 追加在 PAR 行最末尾：唯一的速度指令（count/50ms），0=停车
         reply.print(" SP="); reply.print(speedCmd, 3);
+        // SV：速度环 P 增益（在线可调，用于定极性与标定倾角/速度）
+        reply.print(" SV="); reply.print(speedKp, 4);
         reply.println();
         reply.print("JOGCFG ");reply.print(positionLean.kp,4);reply.print(' ');reply.println(positionLean.limit,3);
         return;
