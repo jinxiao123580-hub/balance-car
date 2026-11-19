@@ -1,0 +1,89 @@
+{
+  "project": "pinghengche / balance-car-showcase",
+  "updated": "2026-11-12T15:02+08:00",
+  "firmware": {
+    "tag": "FW=20261112C",
+    "changes_today": [
+      "FAST_TELEMETRY_DIVIDER: 100(4Hz) -> 40(10Hz) -> 回 100(4Hz)，因为 9600 波特链路饱和导致命令延迟 0.7~0.9s",
+      "新增起步脉冲 KICK_DEG=0.5, KICK_MS=200, KICK_STALL_MS=300, KICK_COOLDOWN_MS=700, KICK_MAX_PER_COMMAND=2, KICK_MAX_TILT_DEG=1.0",
+      "起步脉冲在 main.cpp:3902 之后，targetBalanceAngle 上叠加"
+    ],
+    "bin": "C:\\Users\\10905\\.platformio\\build\\pinghengche\\black_f407zg\\firmware.bin",
+    "flash": "flash-firmware.bat 或 pio run --project-dir ...\\software\\firmware -e black_f407zg -t upload；无 ST-Link 时烧 bin 到 0x08000000"
+  },
+  "confirmed_today": [
+    {
+      "what": "O=2.000 复标 3 次，漂移 -0.01/-0.02/-0.03 mm/s",
+      "evidence": "docs/validation/analysis/20261111-balance-point-calib/calib_log.csv"
+    },
+    {
+      "what": "直立环 P/D 在 100~260 内无系统差异：60s 窗口 pitch sd 全部 0.18~0.19°",
+      "evidence": "docs/validation/analysis/20261112-pulse/tune60.csv"
+    },
+    {
+      "what": "12 次受控脉冲扰动全部自恢复（末态偏差 ≤0.07°），但欠阻尼：超调 0.2~0.38°、回落 0.3~3s",
+      "evidence": "docs/validation/analysis/20261112-pulse/p01.g.csv + p03.g.csv"
+    },
+    {
+      "what": "起步静摩擦门槛 0.5~1.0°：δ=0.3° 位移在噪声内；δ=1.0° 在 1.2s 内冲出 40mm 触发保护",
+      "evidence": "docs/validation/analysis/20261111-lean-scan/thr03.csv + thr03.steps.csv"
+    },
+    {
+      "what": "驱动/电机方向对称：悬空时 ±1.0 编码器 |Δ| 比值 1.00（158267 vs 158200 counts）；落地 |hz| 前 167.2 / 后 167.6",
+      "evidence": "docs/validation/analysis/20261112-kick/air04.g.csv + kick02.g.csv"
+    },
+    {
+      "what": "前后不对称在转 180° 后不翻转：+1.0 = -0.9±6.3mm，-1.0 = -15.4±3.9mm（n=3，位置固定跟随车体坐标系）",
+      "evidence": "docs/validation/analysis/20261112-kick/rev01.g.csv + rev01.phases.csv"
+    },
+    {
+      "what": "固件 kick 逻辑确实触发：target 从 ~2.16 跳到 2.5~2.9，5 秒内 5 次（旧参数）",
+      "evidence": "docs/validation/analysis/20261112-kick/kick02.g.csv"
+    },
+    {
+      "what": "单编码器模式 rawSpeedEncoderMode=1：enc2 恒为 -40、跨度 0（接触不良，用户确认不修且无偏航）",
+      "evidence": "docs/validation/analysis/20261112-kick/air01.g.csv（D 帧 f40/f41）"
+    }
+  ],
+  "falsified_today": [
+    {"claim": "10Hz 遥测有利于控制", "why": "9600 波特下 G 帧 400B/s + D 帧 300B/s 挤占命令通道，O 命令实测延迟 0.7~0.9s", "evidence": "20261112-kick/pair03.g.csv"},
+    {"claim": "换向软窗口 REVERSAL_SOFT 压低后向出力", "why": "落地 |hz| 前后 167.2/167.6，比值 0.998；悬空编码器比值 1.00", "evidence": "kick02.g.csv + air04.g.csv"},
+    {"claim": "位置环回拉导致松手后反向冲出", "why": "main.cpp:3996 手动期 followPosition=true 已挂起位置环", "evidence": "software/firmware/src/main.cpp:3996"},
+    {"claim": "偏航导致单编码器把转动当平动", "why": "用户目视前进/后退全程无转向", "evidence": "用户目视（2026-11-12）"},
+    {"claim": "gear 0.3 能推动车", "why": "请求 1.5 counts/50ms ≈2.8mm/s，低于速度噪声 ±13mm/s，实测位移在噪声内", "evidence": "docs/validation/analysis/20261111-fwd-bwd-o2/tab_fb_03b.fast.csv"}
+  ],
+  "open": [
+    {
+      "question": "前后不对称的最后一环：车体-地面接触耦合",
+      "verified": "驱动对称（悬空 1.00）、地面无关（转 180° 不翻转）、无偏航、指令对称",
+      "unverified": "机械平衡角是否等于 O=2.00（重心是否偏置）",
+      "next": "承认结构性不对称（控制/环境六项已排除），改用固件 TF/TB 方向配平：±1.0 成对测 → 按位移差加 TB 0.10/0.20/0.30° → 两向位移差 <5mm → SAVE。当前 TRIM=0.000/0.000 未补偿"
+    },
+    {
+      "question": "前进指令给 +0.40° 倾角却几乎不位移，后退给 -0.16° 却走 15mm",
+      "verified": "lean 与位移方向相反；同请求幅值下 lean 前向是后向 2.5 倍",
+      "unverified": "是倾角生成路径（ManualPitchControl/outerLoopAuthority）还是落地后的接触差异",
+      "next": "L=0 机械平衡角测完后即可区分"
+    }
+  ],
+  "scripts": {
+    "dir": "software/analysis/",
+    "list": [
+      "calibrate_balance_point.py  O 标定（相机 30s + ±0.05 收敛 + SAVE）",
+      "ble_gear_sweep.py           档位剖面，G 帧指标，带位移/姿态保护",
+      "ble_kick_test.py            起步脉冲验证（--alternate 成对去回）",
+      "ble_lean_scan.py            O 偏移 → 位移的静态特性",
+      "ble_pulse_test.py           受控脉冲扰动（直立环抗扰）",
+      "ble_balance_tune.py         P/D 扫描（60s 长窗口）",
+      "ble_air_test.py             悬空对称性测试（O 钉到实际姿态）",
+      "ble_profile_test.py         任意档位剖面，74 列全量遥测"
+    ]
+  },
+  "gotchas": [
+    "G 帧字段：ms,pos,speed,pitch,target,hz,req；pitch/speed 需 /100 与 /1000（今天两次把 342 当成 34200 用，把 O 设成 342 导致整车故障）",
+    "D 帧字段没有 time_s 列，header 索引要 -1（已踩 3 次）",
+    "位移单位：pos 原始值 /100 /10.8 = mm（10.8 counts/mm 由相机对表得出）",
+    "相机 /dev/video1 今天掉了 3 次，掉线时 O 只能用编码器估（±0.15 mm/s）",
+    "车电池约 1.5 小时，会自己掉线"
+  ]
+}

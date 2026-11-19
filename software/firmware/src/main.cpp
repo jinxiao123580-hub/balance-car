@@ -468,7 +468,7 @@ int encoder2Direction = -1;   // V10 实机确认值：编码器2方向反（8/2
 
   
 
-float balanceAngleOffset = 4.0f; // 用户面板参数 O：上电默认平衡目标角
+float balanceAngleOffset = 2.0f; // 用户面板参数 O：上电默认平衡目标角（2026-11-12 实测定为 2.0°，O=4 会持续单侧倾倒）
 
   
 
@@ -517,6 +517,21 @@ float lastFinalBalanceOutput = 0.0f;
 // 给转子时间脱困。注：201421 验证 S/2+150ms 仍会在软窗口内冲满轨，故调狠。
 const uint16_t REVERSAL_SOFT_TICKS = 25;       // 25×10ms = 250ms 软窗口
 const float REVERSAL_SOFT_LIMIT_SCALE = 0.25f;  // 窗口内限幅×0.25（S=200→50,H=75→18.75）
+// 起步脉冲（breakaway kick）：2026-11-12 实测静摩擦门槛 0.5~1.0°，
+// 低于门槛时速度环给的 0.1~0.3° 倾角只让车「斜着站住」，轮子不滚。
+// 手动档位下若速度持续卡住，就叠加一次 KICK_DEG 的短促倾角把车踢过门槛，然后交回速度环。
+const float KICK_DEG = 0.5f;              // 脉冲倾角（地面实测 0.8° 冲量过大，2026-11-12 改 0.5）
+const uint32_t KICK_MS = 200;             // 脉冲宽度
+const uint32_t KICK_STALL_MS = 300;       // 速度卡住多久才踢
+const uint32_t KICK_COOLDOWN_MS = 700;    // 两次踢的最小间隔
+const uint8_t KICK_MAX_PER_COMMAND = 2;   // 每条手动指令最多踢几次（防连续踢共振）
+const float KICK_STALL_SPEED = 1.0f;      // 滑动平均速度低于此值视为「没走」（counts/50ms）
+const float KICK_SPEED_TAU_S = 0.20f;     // 速度滑动平均时间常数
+// 速度环测量低通：车体存在 1~2Hz 前后摆动（轮子不打滑，编码器就是真实速度），
+// 摆动 ±13mm/s 乘 speedKp(0.02) ≈ ±0.26° 倾角抖动，正好架在 0.3° 静摩擦门槛两侧。
+// 速度外环用低通后的速度，摆动被压掉一个数量级，9mm/s 级的直流指令仍完整保留。
+const float SPEED_MEAS_TAU_S = 0.25f;
+const float KICK_MAX_TILT_DEG = 1.0f;     // |pitch−O| 超过此值就不再踢（姿态没稳）
 
 // 角度死区：|pitch - targetBalanceAngle| < 该值时，直立环输出0（电机不顶）
 // 死区越大越不易震荡，但偏了拉不回来；越小纠偏越积极。当前0.5°：8/21从3°→1.5°→0.5°逐步调小
@@ -646,9 +661,9 @@ const float SPEED_DIRECT_MAX_GYRO_DPS = 80.0f;
   
 
 // 标准串级位置外环：位置误差先生成一个受限目标速度，不直接抢占STEP输出。
-float positionKp = 5.0f;                  // 蓝牙X：用户面板默认值
-float MAX_POSITION_RETURN_SPEED = 1.0f;   // 蓝牙Y：目标回位速度限幅，count/50ms
-float POSITION_DEADBAND_COUNT = 0.0f;     // 蓝牙M：位置死区，平均编码器count
+float positionKp = 0.02f;                 // 蓝牙X：实测安全值（原 5.0 会把静止漂移放大到 230counts/s，2026-11-12 改）
+float MAX_POSITION_RETURN_SPEED = 0.30f;  // 蓝牙Y：目标回位速度限幅，count/50ms（实测安全值）
+float POSITION_DEADBAND_COUNT = 12.0f;    // 蓝牙M：位置死区，平均编码器count（实测安全值）
 
   
   
@@ -984,6 +999,7 @@ uint16_t reversalSoftTicksRemaining = 0;  // 换向后剩余软过渡端点周�
 // 多源Kalman最终估计速度，仍统一使用 count / 50ms
 
 float vehicleSpeed = 0.0f;
+float vehicleSpeedFiltered = 0.0f;   // 速度环实际使用的低通速度（τ=SPEED_MEAS_TAU_S）
 
   
 
@@ -1470,7 +1486,7 @@ const uint32_t TELEMETRY_DIVIDER = 400;  // 400Hz/400 = 1Hz；剩余带宽给下
 
 uint32_t telemetryDivider = 0;
 // 10Hz 快速帧：只发量化速度跟踪/姿态需要的 7 个量，避免完整帧占满 9600 波特
-const uint32_t FAST_TELEMETRY_DIVIDER = 100;  // 400Hz/100 = 4Hz（10Hz 时链路接近饱和，回显会被挤掉）
+const uint32_t FAST_TELEMETRY_DIVIDER = 100;  // 400Hz/100 = 4Hz（2026-11-12 起回到 4Hz：10Hz 会挤占命令通道，实测 O 命令延迟 0.7~0.9s）
 uint32_t fastTelemetryDivider = 0;
 // 收到命令后暂停遥测 400ms，把发送缓冲让给 PAR/参数回显（9600 波特下两者共用同一条 TX）
 uint32_t telemetryMuteUntilMs = 0;
@@ -3658,6 +3674,10 @@ void updateOuterLoop()
 
   
 
+    // 2026-11-12 回退：τ=0.25s 的速度低通把速度外环推过临界（pitch sd 0.17°→3.0°），
+    // 回到原始瞬时速度；滤波思路保留在 SPEED_MEAS_TAU_S 注释里，要用只能小步试。
+    vehicleSpeedFiltered = vehicleSpeed;
+
     speedError =
 
         targetForwardSpeed
@@ -3900,6 +3920,46 @@ void updateOuterLoopAuthority()
     // The held angle is relative to O. 2026-11-05：前后运动改为速度闭环，不再写死角度。
     float pitchOffset = manualForward.normalAuthority()*speedAngleCorrection + motionLean.applied;
     targetBalanceAngle = balanceAngleOffset + outerLoopAuthority * pitchOffset;
+
+    // ---- 起步脉冲：手动档位下速度长时间卡住时，补一次短促倾角破静摩擦 ----
+    {
+        static uint32_t kickStartMs = 0, kickCooldownMs = 0, kickStallSinceMs = 0;
+        static float kickSpeedAvg = 0.0f;
+        static uint8_t kickCount = 0;
+        static int8_t kickLastSign = 0;
+        kickSpeedAvg += (vehicleSpeed - kickSpeedAvg) * (CONTROL_DT / KICK_SPEED_TAU_S);
+        const uint32_t kickNow = millis();
+        const int8_t requestSign = (motionLean.applied > 0.05f) ? 1 : ((motionLean.applied < -0.05f) ? -1 : 0);
+        const bool kickRequesting =
+            manualForward.normalAuthority() > 0.05f && requestSign != 0 &&
+            fabsf(pitch - balanceAngleOffset) < KICK_MAX_TILT_DEG;
+        // 指令方向变了或撤令 → 重新计数，下一条指令还能踢两次
+        if (requestSign != kickLastSign || manualForward.normalAuthority() <= 0.05f) {
+            kickCount = 0;
+            kickLastSign = requestSign;
+        }
+        const bool kickStalled = fabsf(kickSpeedAvg) < KICK_STALL_SPEED;
+        if (!kickRequesting || !kickStalled) {
+            kickStallSinceMs = 0;
+            kickStartMs = 0;
+        } else {
+            if (kickStallSinceMs == 0) kickStallSinceMs = kickNow;
+            if (kickStartMs == 0 && kickCount < KICK_MAX_PER_COMMAND &&
+                kickNow - kickStallSinceMs > KICK_STALL_MS &&
+                (int32_t)(kickNow - kickCooldownMs) > 0) {
+                kickStartMs = kickNow;
+                kickCooldownMs = kickNow + KICK_COOLDOWN_MS;
+                kickCount++;
+            }
+        }
+        if (kickStartMs != 0) {
+            if (kickNow - kickStartMs < KICK_MS) {
+                targetBalanceAngle += (motionLean.applied > 0 ? 1.0f : -1.0f) * KICK_DEG;
+            } else {
+                kickStartMs = 0;
+            }
+        }
+    }
 
   
   
@@ -4920,7 +4980,7 @@ void handleBtCommand(char* cmd, uint8_t len)
     while (vlen > 0 && (cmd[vlen-1] == ' ' || cmd[vlen-1] == '\r' || cmd[vlen-1] == '\n')) vlen--;
     if (key == '?') {
         prepareCommandResponse();
-        reply.print("PAR: TURN=2 MOVE=5 SMOOTH=1 MOTION=2 FW=20261111 TILTMAX=");
+        reply.print("PAR: TURN=2 MOVE=5 SMOOTH=1 MOTION=2 FW=20261112F TILTMAX=");
         reply.print(ManualPitchControl::maxAngle, 2);
         reply.print(" ");
         reply.print("P="); reply.print(balanceKp, 2);
@@ -5786,6 +5846,8 @@ void loop()
     uint32_t workUs = micros() - controlWorkStartUs;
     if (workUs > controlMaxWorkUs) controlMaxWorkUs = workUs;
 }
+
+
 
 
 

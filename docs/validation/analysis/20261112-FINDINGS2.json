@@ -1,0 +1,61 @@
+{
+  "project": "pinghengche / balance-car-showcase",
+  "updated": "2026-11-12T19:41+08:00",
+  "firmware": {
+    "tag": "FW=20261112F",
+    "key_params_saved": {
+      "O": 2.3,
+      "X": 0.0,
+      "Y": 0.3,
+      "M": 12.0,
+      "K": -0.02,
+      "TRIM": [0.0, 0.0],
+      "SAVED": true,
+      "seq": 3
+    },
+    "built_in": [
+      "起步脉冲 KICK_DEG=0.5 / 200ms / 每条指令最多 2 次 / |pitch-O|<1 才踢",
+      "速度环用原始瞬时速度（τ=0.25s 低通已回退）",
+      "位置环默认 X=0.02 Y=0.30 M=12（实测安全值，原 5.0/1.0/0 危险）",
+      "param_store: 无有效记录时先擦扇区再写（修 SAVE 失败）",
+      "FORMAT_VERSION=3 / MAGIC=PCH3"
+    ],
+    "bin": "C:\\Users\\10905\\.platformio\\build\\pinghengche\\black_f407zg\\firmware.bin"
+  },
+  "confirmed": [
+    {"what": "O=2.30 为谷底，且漂移对 O 非单调",
+     "data": {"2.00": "-2.04 mm/s, 游走40mm", "2.20": "-0.25 mm/s, 6.6mm", "2.30": "-0.18 mm/s, 6.2mm", "2.40": "-0.24 mm/s, 5.9mm"},
+     "evidence": "docs/validation/analysis/20261112-trim/ 与 20261112-kick/ 下的原始 G 帧 CSV"},
+    {"what": "位置环关掉更稳", "data": {"X=0": "-0.09~-0.18 mm/s, 游走5.1~10.6mm", "X=0.02": "-0.69 mm/s, 游走16.2mm", "X=0.04": "-6.49 mm/s, 游走134mm"},
+     "evidence": "docs/validation/analysis/20261112-trim/desk_f01.g.csv + 实时对比输出"},
+    {"what": "前后不对称在 O 修正后消失", "data": {"+1.0": "-1.1 mm", "-1.0": "-3.5 mm", "差": "2.4mm < ±4mm 噪声"},
+     "evidence": "docs/validation/analysis/20261112-trim/desk_x0_01.g.csv"},
+    {"what": "悬空时轮子正反对称", "data": {"前进|Δ|": 237800, "后退|Δ|": 209350, "比值": 0.88},
+     "evidence": "docs/validation/analysis/20261112-kick/air05.g.csv"},
+    {"what": "落地后车身倾到位但轮子不滚", "data": {"target": "2.29→3.13", "pitch": "2.31→3.06", "pos": "±5mm 内晃"},
+     "evidence": "docs/validation/analysis/20261112-kick/pulse_fwd02.g.csv"}
+  ],
+  "falsified": [
+    {"claim": "O=4.0", "why": "持续单侧倾倒，pitch 偏离，漂移 25mm/s"},
+    {"claim": "位置环越硬越好", "why": "X=0.04 → 漂移 −6.49mm/s、游走 134mm"},
+    {"claim": "10Hz 遥测有助于控制", "why": "9600 波特饱和，命令延迟 0.7~0.9s"},
+    {"claim": "REVERSAL_SOFT 压低后向", "why": "|hz| 167.2/167.6 对称"},
+    {"claim": "机械卡死", "why": "架空后轮子正反自由旋转，比值 0.88"}
+  ],
+  "open": [
+    {"question": "为什么落地后 0.75° 倾角推不动轮子",
+     "verified": "车身确实倾斜到位；悬空时轮子正常",
+     "unverified": "是桌面位置/障碍，还是翻车 4 次后的车体暗伤",
+     "next": "挪到干净空旷处重测 0.5° 脉冲；仍不动则查低垂件/车架是否顶住轮子"}
+  ],
+  "environment": {
+    "ble": "JDY-23，9600 波特，G 帧 4Hz 是可用上限；10Hz 会挤掉命令",
+    "camera": "slave 100.72.186.31，/dev/video1，标签 ID 2，0.243~0.305 mm/px，USB 反复掉线",
+    "gotchas": [
+      "G 帧字段要 /100、/1000；D 帧 header 索引 −1",
+      "位移 pos/100/10.8 = mm；判位置用窗口均值",
+      "SAVE 前必须 ^ 0,0 并等 ≥4s（manualMotionIsActive 要假）",
+      "本机无 ST-Link，用 flash-firmware.bat 或烧 bin 到 0x08000000"
+    ]
+  }
+}

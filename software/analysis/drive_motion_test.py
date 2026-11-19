@@ -144,6 +144,11 @@ async def run(args):
         await asyncio.sleep(0.2)
         await car.send("?")
         await asyncio.sleep(0.3)
+        # 2026-11-11：fallStopCount 是「开机以来累计」，搬车/倾倒都会加数，
+        # 旧逻辑 car.fall>0 会让一次搬车把后面整轮测试全废掉。改成记基线、只看增量。
+        await asyncio.sleep(0.6)
+        fall0 = car.fall
+        print(f"[基线] fallStopCount={fall0}")
 
         o_est = 4.0
         for item in args.set or []:
@@ -183,8 +188,8 @@ async def run(args):
                 bad = bad + 1 if dev > args.max_dev else 0
                 if bad >= 2:
                     stop["flag"], stop["why"] = True, f"|pitch-O|={dev:.2f}°"
-                if car.fall > 0:
-                    stop["flag"], stop["why"] = True, f"fallStopCount={car.fall}"
+                if car.fall > fall0:
+                    stop["flag"], stop["why"] = True, f"fallStopCount={car.fall}(+{car.fall - fall0})"
 
         guard_task = asyncio.create_task(guard())
 

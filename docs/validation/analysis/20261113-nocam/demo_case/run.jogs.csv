@@ -1,0 +1,4 @@
+n,cycle,dir,idx,delta,step_mm,cum_mm,pitch,status
+1,1,前进,1,-1.30,107.31,-107.31,4.06,ok
+2,1,前进,2,-1.30,0.00,0.00,4.06,skipped
+3,1,前进,3,-1.30,0.00,0.00,4.06,skipped

@@ -1,0 +1,10 @@
+[����] E1:6F:42:A7:FF:36
+[PAR] PAR: TURN=2 MOVE=5 SMOOTH=1 MOTION=2 FW=20261111 TILTMAX=2.00 P=1000.00 D=100.00 O=2.00 Z=0.00 L=1750.0 S=100.0 R=0.1000 F=5.00 G=10.00 T=0.00 U=0.00 K=-0.02 I=0.00 N=2.00 W=50.0 J=2.00 E=0.000 Q=0.000 A=0.000 B=1000.0 H=40.0 X=0.0200 Y=0.30 M=12.00 TRIM=0.000/0.000 EG=0.050 SAVED=1
+[����] �Ѵ泵��
+[����] fallStopCount=66
+[����] rep0 ǰ�� gear=1.0 1.5s  t0=1794385125.37
+[����] rep0 ���� gear=-1.0 1.5s  t0=1794385130.29
+[����] rep0 ǰ�� gear=1.0 1.5s  t0=1794385135.27
+[����] rep0 ���� gear=-1.0 1.5s  t0=1794385140.15
+[���] D:\AI��Ŀ�ܿ�\02_���������е����\PlatformIO��Ŀ\pinghengche\balance-car-showcase\docs\validation\analysis\20261111-fwd-bwd-o2\fb2_g10.csv
+[���] D:\AI��Ŀ�ܿ�\02_���������е����\PlatformIO��Ŀ\pinghengche\balance-car-showcase\docs\validation\analysis\20261111-fwd-bwd-o2\fb2_g10.fast.csv

@@ -461,6 +461,35 @@ class TunePanel(QWidget):
         self.jog_apply_status.setWordWrap(True)
         outer.addWidget(self.jog_apply_status)
 
+        # ---- O 快速调整：紧贴运动控制区，不用滚到参数行也能改平衡目标角 ----
+        o_group = QGroupBox("O 快速调整")
+        o_row = QHBoxLayout(o_group)
+        self.o_quick_label = QLabel("当前 O：--")
+        self.o_quick_label.setMinimumWidth(110)
+        self.o_quick_label.setStyleSheet("color:#1565c0; font-weight:bold;")
+        self.o_quick_label.setToolTip("与参数行 O 实时同步；下面的按钮改完也会回写参数行")
+        o_row.addWidget(self.o_quick_label)
+        for label, delta in (("-0.5", -0.5), ("-0.1", -0.1), ("+0.1", 0.1), ("+0.5", 0.5)):
+            btn = QPushButton(label)
+            btn.setFixedWidth(50)
+            btn.clicked.connect(lambda _checked=False, d=delta: self.o_quick_delta(d))
+            o_row.addWidget(btn)
+        self.btn_o_set4 = QPushButton("设为 4.00")
+        self.btn_o_set4.clicked.connect(lambda: self.o_quick_apply(4.0))
+        o_row.addWidget(self.btn_o_set4)
+        o_row.addWidget(QLabel("指定"))
+        self.o_quick_spin = QDoubleSpinBox()
+        self.o_quick_spin.setDecimals(2)
+        self.o_quick_spin.setSingleStep(0.01)
+        self.o_quick_spin.setRange(-10000.0, 10000.0)
+        self.o_quick_spin.setValue(4.00)
+        o_row.addWidget(self.o_quick_spin)
+        self.btn_o_apply = QPushButton("应用")
+        self.btn_o_apply.clicked.connect(lambda: self.o_quick_apply(None))
+        o_row.addWidget(self.btn_o_apply)
+        o_row.addStretch()
+        outer.addWidget(o_group)
+
         # 左右分栏：左列=参数+日志，右列=实时三线图
         hsplit = QHBoxLayout()
         outer.addLayout(hsplit)
@@ -494,6 +523,10 @@ class TunePanel(QWidget):
             self.ctrl[cmd] = {"box": box, "sl": sl, "dec": dec,
                               "lo": lo, "hi": hi, "cmt": cmt, "car": car,
                               "scale": scale, "dflt": dflt}
+        # O 快速调整的同步挂在这里：参数行是本方法后半段才建的，
+        # 控件组先建好放在运动区下方，信号等 self.ctrl 齐了再接。
+        self.ctrl["O"]["box"].textChanged.connect(self._sync_o_quick)
+        self._sync_o_quick()
         # 参数表放进滚动区：窗口变矮时只滚动参数，底部日志始终可见
         params_widget = QWidget()
         params_widget.setLayout(grid)
@@ -1102,6 +1135,56 @@ class TunePanel(QWidget):
 
         self.status.setText(f"正在顺序下发 {len(commands)} 项…")
         self.run_coro(send_sequence(), "顺序下发全部")
+
+    # ---------- O 快速调整 ----------
+    def _sync_o_quick(self, *_a):
+        """参数行 O 的任何变化（手输/滑块/批量/快速按钮）都同步到只读标签。"""
+        try:
+            v = float(self.ctrl["O"]["box"].text())
+        except (KeyError, ValueError):
+            self.o_quick_label.setText("当前 O：--")
+            return
+        self.o_quick_label.setText(f"当前 O：{v:.2f}°")
+
+    def o_quick_delta(self, delta):
+        try:
+            base = float(self.ctrl["O"]["box"].text())
+        except (KeyError, ValueError):
+            base = self.o_quick_spin.value()
+        self.o_quick_apply(base + delta)
+
+    def o_quick_apply(self, target):
+        """按钮/微调框统一入口：先回写参数行，再走「^ 0,0 → O <v>」。"""
+        info = self.ctrl["O"]
+        if target is None:
+            target = self.o_quick_spin.value()
+        try:
+            target = float(target)
+        except (TypeError, ValueError):
+            return
+        target = max(info["lo"], min(info["hi"], target))
+        target = float(f"{target:.{info['dec']}f}")
+        info["box"].setText(f"{target:.{info['dec']}f}")
+        info["sl"].blockSignals(True)
+        info["sl"].setValue(int(round(target * info["scale"])))
+        info["sl"].blockSignals(False)
+        if hasattr(self, "param_val"):
+            self.param_val["O"] = target
+        info["cmt"].setText(f"发 O {target:.2f}")
+        self.o_quick_spin.setValue(target)
+        self.status.setText(f"O 快速调整 → {target:.2f}°（先发 ^ 0,0 再发 O）")
+        self.run_coro(self._o_quick_sequence(target), f"O {target:.2f}")
+
+    async def _o_quick_sequence(self, target):
+        # 硬件门控：改 O 之前必须先发 ^ 0,0，否则车端静默丢弃 O 命令
+        if not await self.ble.send("^ 0,0"):
+            self.status.setText("O 调整失败：^ 0,0 未送达")
+            return
+        await asyncio.sleep(0.5)
+        if await self.ble.send(f"O {target:.2f}"):
+            self.status.setText(f"O = {target:.2f}° 已下发（^ 0,0 → O）")
+        else:
+            self.status.setText("O 下发失败")
 
     def capture_position(self):
         """让固件把当前编码器位置设为新的回位目标。"""

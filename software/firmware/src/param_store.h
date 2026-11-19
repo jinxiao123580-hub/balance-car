@@ -23,8 +23,8 @@
 namespace ParamStore {
 
 constexpr uint8_t  PARAM_COUNT    = 22;   // 与面板 22 项、PAR 回显顺序一致
-constexpr uint16_t FORMAT_VERSION = 2;    // 改参数顺序/语义必须 +1
-constexpr uint32_t RECORD_MAGIC   = 0x50434832u;  // "PCH2"
+constexpr uint16_t FORMAT_VERSION = 3;    // 改参数顺序/语义必须 +1（2026-11-12：+1 以作废旧记录，让 O=4.0 默认值生效）
+constexpr uint32_t RECORD_MAGIC   = 0x50434833u;  // "PCH3"
 constexpr uint32_t ERASED_WORD    = 0xFFFFFFFFu;
 
 struct Record {
@@ -137,6 +137,10 @@ public:
         uint32_t slot;
         uint32_t seq;
         if (!sc.found) {
+            // 没有有效记录时，扇区里可能还躺着旧版本的记录（例如 magic/version 变过），
+            // flash 只能把 1 写成 0，直接覆盖会失败，所以先擦干净再写。
+            if (!port.eraseSector(0)) return false;
+            erasedAny = true;
             sector = 0;
             slot   = 0;
             seq    = 1;
