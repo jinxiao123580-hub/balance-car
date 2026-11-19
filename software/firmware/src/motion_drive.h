@@ -108,23 +108,9 @@ struct MotionLeanControl {
     static constexpr float limit           = 0.90f;  // deg，绝对上限（旧开环为 2°，且无反馈）
     static constexpr float engageRate      = 2.50f;  // deg/s
     static constexpr float releaseRate     = 3.50f;  // deg/s，释放段可以快一点
-    static constexpr float trimDirectionDeadband = 0.20f; // count/50ms，参考速度在此以内不配平
-    // 方向配平（2026-11-06）：同一倾角下前进比后退快约 2.2 倍时的补偿量。
-    // 两个值都是"正值=该方向更用力"，内部按参考速度方向取符号，只平移运动倾角，
-    // 不参与速度环，也不影响驻车；回退置 0 即可。
-    float forwardTrim  = 0.00f;  // deg
-    float backwardTrim = 0.00f;  // deg
-    // 自学习摩擦补偿（实验，2026-11-06）：按方向各学一个偏移，等价于"自动配平 + 消稳态差"。
-    // 只在该方向真正滚动(|v|>learnMinSpeed)且没有顶到上限时积分；掉电清零，不写 flash。
-    static constexpr float learnGain     = 0.01f;   // deg/s per (count/50ms) 速度误差
-    static constexpr float learnLimit    = 0.15f;   // deg，每方向学习量上限
-    static constexpr float learnMinSpeed = 0.80f;   // count/50ms，未真正滚动就不学
-    float learnedForward = 0.0f;
-    float learnedBackward = 0.0f;
-    float lastLearned = 0.0f;                       // 遥测：最近一次参与方向的学习量
     float requested = 0.0f;
     float applied = 0.0f;
-    void reset() { requested = applied = 0.0f; learnedForward = learnedBackward = lastLearned = 0.0f; }
+    void reset() { requested = applied = 0.0f; }
     // 进入运动的无缝衔接：用当前速度环已输出的倾角作为初值，避免目标角在入口跳变。
     void seed(float offset) {
         if (!std::isfinite(offset)) offset = 0.0f;
@@ -141,26 +127,9 @@ struct MotionLeanControl {
         }
         if (engaged) {
             float speedError = speedReference - measuredSpeed;
-            bool forward = speedReference > trimDirectionDeadband;
-            bool backward = speedReference < -trimDirectionDeadband;
-            float trim = forward ? forwardTrim : (backward ? -backwardTrim : 0.0f);
-            float base = feedForwardGain * speedReference + errorGain * speedError + trim;
+            float base = feedForwardGain * speedReference + errorGain * speedError;
 
-            float add = 0.0f;
-            if (forward || backward) {
-                float &learned = forward ? learnedForward : learnedBackward;
-                bool rolling = std::fabs(measuredSpeed) > learnMinSpeed;
-                bool pushing = (base + learned) * speedError > 0.0f;
-                bool saturated = pushing && std::fabs(base + learned) >= limit;
-                if (rolling && !saturated) {
-                    learned += learnGain * speedError * dt;
-                    if (learned > learnLimit) learned = learnLimit;
-                    else if (learned < -learnLimit) learned = -learnLimit;
-                }
-                add = learned;
-                lastLearned = learned;
-            }
-            requested = ManualTurnControl::clamp(base + add, -limit, limit);
+            requested = ManualTurnControl::clamp(base, -limit, limit);
         } else {
             requested = 0.0f;
         }

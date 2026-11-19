@@ -517,21 +517,10 @@ float lastFinalBalanceOutput = 0.0f;
 // 给转子时间脱困。注：201421 验证 S/2+150ms 仍会在软窗口内冲满轨，故调狠。
 const uint16_t REVERSAL_SOFT_TICKS = 25;       // 25×10ms = 250ms 软窗口
 const float REVERSAL_SOFT_LIMIT_SCALE = 0.25f;  // 窗口内限幅×0.25（S=200→50,H=75→18.75）
-// 起步脉冲（breakaway kick）：2026-11-12 实测静摩擦门槛 0.5~1.0°，
-// 低于门槛时速度环给的 0.1~0.3° 倾角只让车「斜着站住」，轮子不滚。
-// 手动档位下若速度持续卡住，就叠加一次 KICK_DEG 的短促倾角把车踢过门槛，然后交回速度环。
-const float KICK_DEG = 0.5f;              // 脉冲倾角（地面实测 0.8° 冲量过大，2026-11-12 改 0.5）
-const uint32_t KICK_MS = 200;             // 脉冲宽度
-const uint32_t KICK_STALL_MS = 300;       // 速度卡住多久才踢
-const uint32_t KICK_COOLDOWN_MS = 700;    // 两次踢的最小间隔
-const uint8_t KICK_MAX_PER_COMMAND = 2;   // 每条手动指令最多踢几次（防连续踢共振）
-const float KICK_STALL_SPEED = 1.0f;      // 滑动平均速度低于此值视为「没走」（counts/50ms）
-const float KICK_SPEED_TAU_S = 0.20f;     // 速度滑动平均时间常数
 // 速度环测量低通：车体存在 1~2Hz 前后摆动（轮子不打滑，编码器就是真实速度），
 // 摆动 ±13mm/s 乘 speedKp(0.02) ≈ ±0.26° 倾角抖动，正好架在 0.3° 静摩擦门槛两侧。
 // 速度外环用低通后的速度，摆动被压掉一个数量级，9mm/s 级的直流指令仍完整保留。
 const float SPEED_MEAS_TAU_S = 0.25f;
-const float KICK_MAX_TILT_DEG = 1.0f;     // |pitch−O| 超过此值就不再踢（姿态没稳）
 
 // 角度死区：|pitch - targetBalanceAngle| < 该值时，直立环输出0（电机不顶）
 // 死区越大越不易震荡，但偏了拉不回来；越小纠偏越积极。当前0.5°：8/21从3°→1.5°→0.5°逐步调小
@@ -694,6 +683,8 @@ float turnKd = 0.0f;
   
 
 float targetForwardSpeed = 0.0f;
+// SP 命令设定的目标速度（count/50ms）。与 ^ 手动通路互斥：^ 活动时被清零。
+float speedCmd = 0.0f;
 
 float targetTurnRate = 0.0f;
 
@@ -749,9 +740,6 @@ float speedAngleLimited = 0.0f;
 
 // 速度直投积分（治"往一边溜"）：对准 speedError 累积、直接叠到 STEP Hz，不进平衡角。
 // 只加直投积分不碰速度PI目标角路，前进/转弯(targetForwardSpeed/turnKp)语义保留。
-float speedDirectIntegral = 0.0f;
-float speedDirectIntegralGain = 0.0f;   // 直投积分增益（蓝牙在线调参：V）。0=关
-const float SPEED_DIRECT_INTEGRAL_LIMIT = 40.0f; // 积分累积上限（误差累积值，非STEP Hz）
 
 float speedIntegral = 0.0f;          // 经典速度PI积分累积（纯串级，会进目标角）
 float speedAngleCorrection = 0.0f;   // 经典速度PI输出的目标倾角修正（叠加到 targetBalanceAngle）
@@ -3616,6 +3604,13 @@ void updateOuterLoop()
     float jogDirection=speedLoopDirection*speedKp>=0 ? 1.0f : -1.0f;
     positionLean.update(jogPositionControl ? positionError : 0,jogPositionControl,.01f,jogDirection);
     targetForwardSpeed=positionSpeedReference.update(targetForwardSpeed,.01f);
+    // ---- SP 速度指令：唯一的速度设定入口 ----
+    // 与 ^ 手动通路互斥：^ 正在动作时清掉 SP，避免两套通路同时写目标速度。
+    if (manualMotionWasBusy) {
+        speedCmd = 0.0f;
+    } else if (speedCmd != 0.0f) {
+        targetForwardSpeed = speedCmd;   // 直接进入下面的经典速度 PI
+    }
     if(jogPositionControl)positionSpeedTarget=targetForwardSpeed;
 
     // --------------------------------------------------------
@@ -3768,7 +3763,6 @@ void updateOuterLoop()
         speedIContribution = 0.0f;
         speedAngleUnclamped = 0.0f;
         speedAngleLimited = 0.0f;
-        speedDirectIntegral = 0.0f;
         speedErrorDotFilt = 0.0f;
         speedErrorPrev = speedError;
         speedDirectOutput = 0.0f;
@@ -3920,46 +3914,6 @@ void updateOuterLoopAuthority()
     // The held angle is relative to O. 2026-11-05：前后运动改为速度闭环，不再写死角度。
     float pitchOffset = manualForward.normalAuthority()*speedAngleCorrection + motionLean.applied;
     targetBalanceAngle = balanceAngleOffset + outerLoopAuthority * pitchOffset;
-
-    // ---- 起步脉冲：手动档位下速度长时间卡住时，补一次短促倾角破静摩擦 ----
-    {
-        static uint32_t kickStartMs = 0, kickCooldownMs = 0, kickStallSinceMs = 0;
-        static float kickSpeedAvg = 0.0f;
-        static uint8_t kickCount = 0;
-        static int8_t kickLastSign = 0;
-        kickSpeedAvg += (vehicleSpeed - kickSpeedAvg) * (CONTROL_DT / KICK_SPEED_TAU_S);
-        const uint32_t kickNow = millis();
-        const int8_t requestSign = (motionLean.applied > 0.05f) ? 1 : ((motionLean.applied < -0.05f) ? -1 : 0);
-        const bool kickRequesting =
-            manualForward.normalAuthority() > 0.05f && requestSign != 0 &&
-            fabsf(pitch - balanceAngleOffset) < KICK_MAX_TILT_DEG;
-        // 指令方向变了或撤令 → 重新计数，下一条指令还能踢两次
-        if (requestSign != kickLastSign || manualForward.normalAuthority() <= 0.05f) {
-            kickCount = 0;
-            kickLastSign = requestSign;
-        }
-        const bool kickStalled = fabsf(kickSpeedAvg) < KICK_STALL_SPEED;
-        if (!kickRequesting || !kickStalled) {
-            kickStallSinceMs = 0;
-            kickStartMs = 0;
-        } else {
-            if (kickStallSinceMs == 0) kickStallSinceMs = kickNow;
-            if (kickStartMs == 0 && kickCount < KICK_MAX_PER_COMMAND &&
-                kickNow - kickStallSinceMs > KICK_STALL_MS &&
-                (int32_t)(kickNow - kickCooldownMs) > 0) {
-                kickStartMs = kickNow;
-                kickCooldownMs = kickNow + KICK_COOLDOWN_MS;
-                kickCount++;
-            }
-        }
-        if (kickStartMs != 0) {
-            if (kickNow - kickStartMs < KICK_MS) {
-                targetBalanceAngle += (motionLean.applied > 0 ? 1.0f : -1.0f) * KICK_DEG;
-            } else {
-                kickStartMs = 0;
-            }
-        }
-    }
 
   
   
@@ -4312,7 +4266,7 @@ void sendTelemetry()
         (int)(telemKalmanBiasMax * 1000.0f),   // 48 窗口内 kalmanBias 最大值 *1000
         (int)(manualForward.requested*1000.0f),
         (int)(manualForward.applied*1000.0f),
-        (int)(motionLean.lastLearned * 1000.0f), // manualI1000：运动外环当前方向的学习量（°×1000）
+        (int)(0.0f),                              // manualI1000：自学习已移除，固定 0（保持 D 帧列数不变）
         (int)manualTurn.requested,
         (int)positionHoldSuspended,
         (manualForward.needsZero ? 1 : 0) | (manualTurn.needsZero ? 2 : 0),
@@ -4617,10 +4571,6 @@ void setup()
 
         0.0f;
 
-    speedDirectIntegral =
-
-        0.0f;
-
   
 
     speedDirectAuthority =
@@ -4848,13 +4798,12 @@ static bool btCmdOverflow = false;
 void handleBtCommand(char* cmd, uint8_t len);   // 前置声明
 
 // ------------------------------------------------------------
-// 运行时可调的运动环增益（2026-11-10）：TF/TB/EG + 数值
-//   TF <deg>   MotionLeanControl::forwardTrim   前进方向配平
-//   TB <deg>   MotionLeanControl::backwardTrim  后退方向配平
-//   EG <deg>   MotionLeanControl::errorGain     速度误差→倾角增益
-// 为什么用两字母：A~Z 已被 22 项面板参数加 C/V/Q/A 全部占满，再开单字母会和
-// PAR 回显/面板解析打架；两字母整词既不误命中，也不动 97 列 CSV 契约。
-// 这三个量故意只改 RAM、不写 flash：它们是"试的时候改"，定下来再进参数表。
+// 运行时可调的参数（2026-11-19 简化后只剩两个）：
+//   EG <deg>   MotionLeanControl::errorGain   速度误差→倾角增益（^ 手动通路用）
+//   SP <v>     目标速度（count/50ms，钳 ±MAX_TARGET_FORWARD_SPEED）
+//              SP 是唯一的速度设定入口，进入经典速度 PI；与 ^ 手动通路互斥。
+// 为什么用两字母：A~Z 已被面板参数占满，再开单字母会和 PAR 回显/面板解析打架；
+// 两字母整词既不误命中，也不动 D 帧/CSV 契约。只改 RAM、不写 flash。
 // ------------------------------------------------------------
 static bool handleTunableCommand(const char* cmd, uint8_t len, QueuedBtReply& reply)
 {
@@ -4864,14 +4813,13 @@ static bool handleTunableCommand(const char* cmd, uint8_t len, QueuedBtReply& re
     if (lead + 2 < len && cmd[lead + 2] != ' ' && cmd[lead + 2] != '\t') return false;
     const char a = (char)toupper((unsigned char)cmd[lead]);
     const char b = (char)toupper((unsigned char)cmd[lead + 1]);
-    const bool isForwardTrim  = (a == 'T' && b == 'F');
-    const bool isBackwardTrim = (a == 'T' && b == 'B');
     const bool isErrorGain    = (a == 'E' && b == 'G');
-    if (!isForwardTrim && !isBackwardTrim && !isErrorGain) return false;
+    const bool isSpeedCmd     = (a == 'S' && b == 'P');
+    if (!isErrorGain && !isSpeedCmd) return false;
 
     uint8_t vstart = lead + 2;
     while (vstart < len && (cmd[vstart] == ' ' || cmd[vstart] == '\t')) ++vstart;
-    if (vstart >= len) { reply.println("ERR:TF/TB/EG need a number"); return true; }
+    if (vstart >= len) { reply.println("ERR:SP/EG need a number"); return true; }
     char vbuf[16];
     uint8_t vlen = 0;
     for (uint8_t i = vstart; i < len && vlen + 1u < sizeof(vbuf); ++i) {
@@ -4884,22 +4832,20 @@ static bool handleTunableCommand(const char* cmd, uint8_t len, QueuedBtReply& re
     const float value = strtof(vbuf, &end);
     // 用区间判断挡 NaN/Inf，而不是 isfinite()：后者在主机回归里没有非限定声明
     if (end == vbuf || *end != '\0' || !(value > -1.0e6f && value < 1.0e6f)) {
-        reply.println("ERR:TF/TB/EG need a number");
+        reply.println("ERR:SP/EG need a number");
         return true;
     }
 
-    if (isForwardTrim) {
-        motionLean.forwardTrim = ManualTurnControl::clamp(value, -1.0f, 1.0f);
-    } else if (isBackwardTrim) {
-        motionLean.backwardTrim = ManualTurnControl::clamp(value, -1.0f, 1.0f);
-    } else {
+    if (isSpeedCmd) {
+        speedCmd = ManualTurnControl::clamp(value, -MAX_TARGET_FORWARD_SPEED, MAX_TARGET_FORWARD_SPEED);
+        reply.print("SP ok ");
+        reply.println(speedCmd, 3);
+        return true;
+    }
+    {
         // 误差增益开太大等于把 0.9° 上限一步打满，只允许 0~0.15
         motionLean.errorGain = ManualTurnControl::clamp(value, 0.0f, 0.15f);
     }
-    reply.print("TRIM ");
-    reply.print(motionLean.forwardTrim, 3);
-    reply.print(' ');
-    reply.print(motionLean.backwardTrim, 3);
     reply.print(" EG ");
     reply.print(motionLean.errorGain, 3);
     reply.println();
@@ -5007,12 +4953,12 @@ void handleBtCommand(char* cmd, uint8_t len)
         reply.print(" X="); reply.print(positionKp, 4);
         reply.print(" Y="); reply.print(MAX_POSITION_RETURN_SPEED, 2);
         reply.print(" M="); reply.print(POSITION_DEADBAND_COUNT, 2);
-        // 运动环的运行时增益（TF/TB/EG 可以改，格式用 / 分隔，避免被当成单字母参数）
-        reply.print(" TRIM="); reply.print(motionLean.forwardTrim, 3);
-        reply.print('/'); reply.print(motionLean.backwardTrim, 3);
+        // 运动环的运行时增益（EG 可以改；SP 是当前速度指令）
         reply.print(" EG="); reply.print(motionLean.errorGain, 3);
         // SAVED=1：当前 RAM 参数与 flash 记录一致；0：改过没存（面板显示橙色提示）
         reply.print(" SAVED="); reply.print(paramDirty ? 0 : (paramSaved ? 1 : 0));
+        // SP 追加在 PAR 行最末尾：唯一的速度指令（count/50ms），0=停车
+        reply.print(" SP="); reply.print(speedCmd, 3);
         reply.println();
         reply.print("JOGCFG ");reply.print(positionLean.kp,4);reply.print(' ');reply.println(positionLean.limit,3);
         return;
@@ -5314,10 +5260,6 @@ void loop()
 
             0.0f;
 
-        speedDirectIntegral =
-
-            0.0f;
-
   
 
         speedDirectAuthority =
@@ -5534,10 +5476,6 @@ void loop()
 
 
         speedDirectOutput =
-
-            0.0f;
-
-        speedDirectIntegral =
 
             0.0f;
 
