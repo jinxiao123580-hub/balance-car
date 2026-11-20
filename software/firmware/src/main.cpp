@@ -6,6 +6,9 @@
 #include "control/imu.h"
 #include "control/attitude.h"
 #include "control/speed_est.h"
+#include "control/balance.h"
+#include "control/cascade.h"
+#include "remote/remote_control.h"
 #include <Wire.h>
 #include <SparkFun_BMI270_Arduino_Library.h>
 #include <HardwareTimer.h>
@@ -13,18 +16,6 @@
 #include "manual_motion.h"
 #include "position_jog.h"
 #include "motion_drive.h"
-PositionOdometry positionOdom;
-PositionJog positionJog;
-
-// 2026-11-05 前后运动：操作量 -> 速度目标 -> 速度闭环倾角（平衡环不退出）
-MotionSpeedProfile motionSpeedProfile;
-MotionLeanControl motionLean;
-MotionPositionPlan motionPlan;  // 预测位置环（X=0 时输出恒 0，行为不变）
-NetSpeedEstimator motionNetSpeed;  // 前后运动外环专用的 200ms 净速度
-bool manualMotionWasBusy = false;
-PositionSpeedReference positionSpeedReference;
-PositionLeanControl positionLean;
-ManualTurnControl manualTurn;
 ManualPitchControl manualForward;
 
 // MKS TMC2209 V2.0 以独立 STEP/DIR 模式运行；不依赖 PDN_UART 启动。
@@ -45,111 +36,6 @@ ManualPitchControl manualForward;
 // OLED完全不参与运行。
 // ============================================================
 HardwareSerial BTSerial(BT_RX_PIN, BT_TX_PIN);
-// 整体平衡方向
-int balanceDirection = - 1;
-
-// ============================================================
-// 机械平衡角
-// ============================================================
-float balanceAngleOffset = 2.99f;  // 用户面板参数 O：上电默认平衡目标角。
-
-// 2026-11-19 实测定为 2.99（烧录重启后二分：4.24 会漂 +28.5mm/s，2.99 时 −0.11mm/s）。
-// 注意 O 是随装配/上电变化的量：每次上电先 `?` 看 O=，再用 ble_find_o.py 重测；
-// 闪存里有 SAVED 记录时，本默认值只在擦除后首次启动才生效。
-// 历史：2026-11-12 曾因"O=4 持续单侧倾倒"降到 2.0，11-19 找到真因是 N=2.0（见 MAX_SPEED_ANGLE）。
-// ============================================================
-// PID参数
-// ============================================================
-// ------------------------------------------------------------
-// 直立环 PD
-// ------------------------------------------------------------
-float balanceKp = 1000.0f;  // 直立环P：角度误差1°→STEP加速度原始输出
-float balanceKd = 100.0f;  // 直立环D：角速度阻尼
-
-// 直立环最终输出限幅 Hz（finalBalanceOutput 钳位）。防大角度时输出冲到±25kHz超高频失步抱死。
-// 注意：限幅不能太小（试过±2000/±4000站不住=恢复力被砍），12000 是折中值。
-float BALANCE_OUTPUT_LIMIT_HZ = 1750.0f;
-
-// 8/21 输出斜坡限速：每控制周期(2.5ms) finalBalanceOutput 最多变化这么多Hz。
-// 修复"运行中突然卡死"(失步)：2000/4000限幅站不住(砍恢复力)，30000等效无限幅能站但
-// 大角度瞬间0→25kHz失步卡死。斜坡+12000限幅：保留恢复力且电机加速跟得上。
-// 成熟步进平衡结构：直立PD不再直接指定STEP速度，而是每10ms给速度增加一个增量。
-// S为100Hz每次允许的最大频率增量；40Hz/update = 4000Hz/s。
-float BALANCE_OUTPUT_SLEW_HZ = 100.0f;
-float BALANCE_ACCEL_SCALE = 0.10f;  // 蓝牙R：直立PD输出到每次STEP频率增量的比例
-
-// 高速驱动保护：只限制"继续加速"，不限制制动/反向所需的增量。
-// B=保护启动频率，H=高速继续加速的每10ms最大频率增量。
-float HIGH_SPEED_ACCEL_START_HZ = 1000.0f;
-float HIGH_SPEED_ACCEL_LIMIT_HZ = 40.0f;
-float lastFinalBalanceOutput = 0.0f;
-
-// 角度死区：|pitch - targetBalanceAngle| < 该值时，直立环输出0（电机不顶）
-// 死区越大越不易震荡，但偏了拉不回来；越小纠偏越积极。当前0.5°：8/21从3°→1.5°→0.5°逐步调小
-float BALANCE_ANGLE_DEADBAND_DEG = 0.0f;
-
-// ------------------------------------------------------------
-// 串级速度PI外环
-//
-// 控制结构：
-//
-// targetForwardSpeed
-//        ↓
-// 速度误差 = target - Kalman融合速度
-//        ↓
-// 速度直投（P×WHEEL_TO_HZ_SCALE + 积分Gain）→ 直接叠加STEP Hz
-//        ↓
-// 直立PD（400Hz）
-//        ↓
-// STEP频率
-//
-// 速度外环每50ms执行一次 = 20Hz。
-// （旧"速度PI→目标倾角→改targetBalanceAngle"路径已移除：见 .bak_deadcode_20260902）
-// ------------------------------------------------------------
-// 很小的速度误差不积分，避免零附近反复积累
-float SPEED_ERROR_DEADBAND = 2.0f;  // 速度误差死区(速度环积分门控) 2026-09-02 可调=J
-
-// 目标速度变化限幅。
-// 当前targetForwardSpeed通常为0，这个参数主要为后续遥控前进保留。
-// 2026-11-19：8 太小——车被锁在"几 mm/s"的静摩擦主导区间，任何环都稳不住。
-// 放到 30，允许进入正常巡航速度（SP 命令仍受此钳制）。
-// 2026-11-20: runtime variable + `MS <v>` command (RAM-only), no reflash for range tuning.
-float MAX_TARGET_FORWARD_SPEED = 30.0f;
-
-// ------------------------------------------------------------
-// 速度P直接STEP快速阻尼
-//
-// 用于解决“只改变目标角度，轮速响应滞后明显”的问题。
-// 这一路直接叠加到直立环STEP频率输出，但权限受姿态限制。
-// ------------------------------------------------------------
-int speedLoopDirection = - 1;  // 2026-09-02 1→-1：架空实测定反。原=轮只往单方向转；翻号后=轮来回正反转（方向盘反）
-float speedDirectKp = 0.0f;  // 第一版加速度结构关闭直接STEP阻尼，避免与速度PI互相打架
-
-// 比速度PI反应快，抑制"轮子被拽着走"的滞后。过大→高频抖动/啸叫，过小→轮速响应肉
-float speedPredictHorizon = 0.0f;  // STEP速度预测时间（蓝牙A），单位s；0=关闭预测
-// 经典速度PI外环（改目标角）：speedAngleCorrection 叠加到目标平衡角，让车倾斜以移动。
-float speedKp = - 0.10f;  // 速度PI到目标角的比例增益；实车已确认该号为正确方向。
-
-// 2026-11-19：−0.02 太小（SP=8 只产生 0.16°，低于破粘门槛 0.5~0.7°），
-// 实测 −0.10 在 SP±8 下给出 +43.8/−43.0mm 的对称位移（2% 差）。
-// 上限：≥0.20 会猛冲撞翻（SV 0.20/0.30 实测 −47.9/−11.9mm/s）。
-float speedKi = 0.0f;  // 先用纯P验证速度方向；启用后采用条件积分/抗饱和
-float speedKd = 0.0f;
-float MAX_SPEED_ANGLE = 0.8f;  // 速度修正角上限（参数 N）。
-
-float SPEED_INTEGRAL_LIMIT = 50.0f;  // 速度PI积分累积上限（误差×秒，非deg）
-
-// ------------------------------------------------------------
-// 位置快速拉回
-//
-// 作用：车只要离开开机位置一点点，就立即给出反向STEP修正。
-// 这一路直接读取编码器累计位置，400Hz更新，不等待50ms速度窗口。
-// ------------------------------------------------------------
-// 标准串级位置外环：位置误差先生成一个受限目标速度，不直接抢占STEP输出。
-float positionKp = 0.02f;  // 蓝牙X：实测安全值（原 5.0 会把静止漂移放大到 230counts/s，2026-11-12 改）
-float MAX_POSITION_RETURN_SPEED = 0.30f;  // 蓝牙Y：目标回位速度限幅，count/50ms（实测安全值）
-float POSITION_DEADBAND_COUNT = 12.0f;  // 蓝牙M：位置死区，平均编码器count（实测安全值）
-
 // ------------------------------------------------------------
 // 转向环 PD
 // 当前关闭
@@ -157,67 +43,10 @@ float POSITION_DEADBAND_COUNT = 12.0f;  // 蓝牙M：位置死区，平均编码
 float turnKp = 0.0f;
 float turnKd = 0.0f;
 
-// ============================================================
-// 目标值
-// ============================================================
-float targetForwardSpeed = 0.0f;
-
-// SP 命令设定的目标速度（count/50ms）。与 ^ 手动通路互斥：^ 活动时被清零。
-float speedCmd = 0.0f;
-float targetTurnRate = 0.0f;
-
-// ============================================================
-// 目标角阶跃测试
-//
-// TEST_TARGET_ANGLE_OFFSET:
-// 当前关闭阶跃测试：TEST_TARGET_ANGLE_OFFSET = 0.0f
-// 速度PI同样关闭。
-// 本版只用于观察：
-//   1. Kalman pitch
-//   2. gyroPitchRate
-//
-// 用于判断落地运动时：
-// 是真实车体仍在持续旋转，还是Kalman角度被动态加速度拉偏。
-// ============================================================
-// 目标角阶跃诊断已关闭，正式外环版本不再使用固定阶跃。
-// ============================================================
-// 速度PI控制变量
-// ============================================================
-float speedError = 0.0f;
-float speedPContribution = 0.0f;
-float speedIContribution = 0.0f;
-float speedAngleUnclamped = 0.0f;
-float speedAngleLimited = 0.0f;
-
-// 速度直投积分（治"往一边溜"）：对准 speedError 累积、直接叠到 STEP Hz，不进平衡角。
-// 只加直投积分不碰速度PI目标角路，前进/转弯(targetForwardSpeed/turnKp)语义保留。
-float speedIntegral = 0.0f;  // 经典速度PI积分累积（纯串级，会进目标角）
-float speedAngleCorrection = 0.0f;  // 经典速度PI输出的目标倾角修正（叠加到 targetBalanceAngle）
-float speedErrorPrev = 0.0f;  // 速度误差微分阻尼：上一拍误差
-float speedErrorDotFilt = 0.0f;  // 速度误差微分阻尼：低通后的误差变化率
-
 uint8_t motor1ZeroHoldCount = 0;
 uint8_t motor2ZeroHoldCount = 0;
 
 uint8_t fallConfirmCount = 0;
-
-// ============================================================
-// 大角度直立优先
-//
-// 小角度：速度环 + 位置环全部参与
-// 中等角度：外环平滑减弱
-// 大角度：外环完全退出，只保留直立PD救车
-// ============================================================
-float OUTER_FULL_ANGLE_DEG = 5.0f;  // |pitch-平衡点| <= 此角：外环全权限
-float OUTER_DISABLE_ANGLE_DEG = 10.0f;  // >=此角：外环退出，只留直立PD
-
-// 直立环输出衰减系数（verticalLoopGain）。range 0~1。
-// 现在混合输出 = verticalLoopGain*balanceOutput + outerLoopAuthority*(speedDirect+positionDirect)。
-// 用户方案：削弱直立环(如0.7)给速度环让权重，速度环直接叠加到轮速而非改目标角。
-float verticalLoopGain = 0.70f;
-
-// 外环当前权限：0~1
-float outerLoopAuthority = 1.0f;
 
 uint32_t fallStopCount = 0;  // 倒地保护累计触发次数（遥测第43项，只增不减）
 // ---- 250ms 遥测窗口极值保持（穿透 250ms 采样盲区，抓短促尖峰）----
@@ -229,10 +58,6 @@ float telemBalHzAbsMax = 0.0f;  // 窗口内 max|balanceOutput| Hz（量化饱�
 float telemKalmanBiasMin = 1e9f;  // 窗口内 kalmanBias 最小/最大（首次发送后由 sendTelemetry 重置为当拍值）
 float telemKalmanBiasMax = - 1e9f;
 
-// 换向软过渡状态（见 updateBalanceLoop）
-int32_t prevIntegratedSpeedCmdSign = 0;  // 上一端点周期 integratedMotorSpeedCommand 符号
-uint16_t reversalSoftTicksRemaining = 0;  // 换向后剩余软过渡端点周期数
-
 // 车辆相对开机/重新站立位置的累计位移，单位为平均编码器count
 float vehiclePosition = 0.0f;
 
@@ -243,56 +68,8 @@ int32_t positionZeroCount2 = 0;
 // 目标位置固定为0，即尽量回到启动位置
 float targetVehiclePosition = 0.0f;
 
-// 位置串级外环诊断量
-float positionError = 0.0f;
-float positionSpeedTarget = 0.0f;
-bool positionHoldWasEnabled = false;
-
-// Shared arbitration point for future forward/reverse manual commands.
-bool positionHoldSuspended = false;
-bool manualMotionIsActive() {
-  uint32_t now = millis();
-  return manualTurn.busy(now) || manualForward.busy(now);
-}
-
-void captureCurrentPositionTarget();
-void stopPositionJog(int reason);
-void updatePositionHold();
 void paramStorageBoot();  // 开机从 flash 读回 22 项参数（定义在蓝牙命令区）
 
-// ============================================================
-// 控制变量
-// ============================================================
-float targetBalanceAngle = 4.0f;  // 初始值：与 balanceAngleOffset 一致
-float balanceOutput = 0.0f;
-float balancePOutput = 0.0f;
-float balanceDOutput = 0.0f;
-float turnOutput = 0.0f;
-
-// 速度P直接STEP修正
-float speedDirectOutput = 0.0f;
-float speedDirectUnclampedOutput = 0.0f;
-float speedAccelerationFiltered = 0.0f;
-float speedPredictionDelta = 0.0f;
-float speedPredicted = 0.0f;
-float speedPredictPrevSpeed = 0.0f;
-
-// 速度直接项权限：= outerLoopAuthority（连续0~1，大角度时降为0退出）
-float speedDirectAuthority = 0.0f;
-float speedDirectAppliedOutput = 0.0f;
-
-// 直立PD + 速度直接STEP阻尼后的最终前后控制量
-float finalBalanceOutput = 0.0f;
-float mixedBalanceOutput = 0.0f;
-float limitedBalanceOutput = 0.0f;
-float balanceAccelRawOutput = 0.0f;  // 100Hz本次未限幅STEP频率增量 Hz/update
-float balanceAccelLimitedOutput = 0.0f;  // 100Hz加速度限幅后的增量 Hz/update
-float balanceAccelEffectiveLimit = 0.0f;  // 本拍实际使用的增量限幅 Hz/update
-bool highSpeedAccelProtectionActive = false;
-float balanceAccelSubstepOutput = 0.0f;  // 把一个100Hz端点增量均分到4个400Hz小步
-float integratedMotorSpeedCommand = 0.0f;  // 对增量积分得到的STEP目标频率 Hz
-uint8_t balanceAccelDivider = 0;
-float lastTurnError = 0.0f;
 void clearControlOutputDiagnostics() {
   manualTurn.clear();
   manualForward.clear();
@@ -305,14 +82,7 @@ void clearControlOutputDiagnostics() {
   balanceDOutput = 0.0f;
   balanceOutput = 0.0f;
   turnOutput = 0.0f;
-  speedDirectOutput = 0.0f;
-  speedDirectUnclampedOutput = 0.0f;
-  speedAccelerationFiltered = 0.0f;
-  speedPredictionDelta = 0.0f;
-  speedPredicted = 0.0f;
-  speedPredictPrevSpeed = vehicleSpeed;
-  speedDirectAppliedOutput = 0.0f;
-  speedDirectAuthority = 0.0f;
+  telemetrySpeedSnapshot100Hz = 0.0f;  // 遥测第19列快照（原 speedPredicted 列位）
   positionSpeedTarget = 0.0f;
   positionError = 0.0f;
   mixedBalanceOutput = 0.0f;
@@ -431,375 +201,6 @@ class QueuedBtReply: public Print {
 };
 
 // ============================================================
-// 漂移拉回外环
-// 成熟步进平衡车串级外环：100Hz速度PI -> 小目标倾角。
-// 编码器增量换算为既有count/50ms量纲，保持参数和遥测单位不变。
-// ============================================================
-void updateOuterLoop() {
-  // --------------------------------------------------------
-  // 4. 标准串级位置P外环：位置误差 -> 受限目标速度
-  // --------------------------------------------------------
-  bool jogPositionControl = false;
-  if (positionJog.active) {
-    int mode = (encoder1Trusted && encoder2Trusted) ? 0: (encoder1Trusted ? 1: (encoder2Trusted ? 2: 3));
-    positionJog.update(vehiclePosition, vehicleSpeed, mode, millis(), .01f);
-    if (!positionJog.active) {
-      captureCurrentPositionTarget();
-      if (positionJog.reason == PositionJog::ARRIVED) {
-        targetVehiclePosition = positionJog.arrival.center;
-        positionError = targetVehiclePosition - vehiclePosition;
-      }
-    } else {
-      jogPositionControl = true;
-      targetVehiclePosition = positionJog.reference;
-      positionError = targetVehiclePosition - vehiclePosition;
-      positionSpeedTarget = targetForwardSpeed = 0;
-    }
-  }
-  if (manualForward.busy(millis())) {
-    // 前后运动闭环（2026-11-05）：操作量只给速度目标，倾角由速度误差生成。
-    // 不再把最大 2° 的死倾角直接写进目标角；平衡环全程参与，倾角受 1° 上限和速率限制。
-    if (!manualMotionWasBusy) {
-      // 入口无缝：用速度环当前倾角做初值，目标角不跳变；净速度从当前位置重新起算。
-      motionLean.seed(speedAngleCorrection);
-      motionSpeedProfile.reset();
-      motionNetSpeed.reset(vehiclePosition);
-      motionPlan.start(vehiclePosition);
-      manualMotionWasBusy = true;
-    }
-    float normalized = ManualTurnControl::clamp(manualForward.planned / ManualPitchControl::maxAngle, - 1.0f, 1.0f);
-    float motionSpeedReference = motionSpeedProfile.update(normalized * MotionSpeedProfile::maxSpeed, .01f);
-    // 200ms 净速度：滤掉位置环绕着平衡点的高频摆动，只留真正的位移趋势。
-    float netSpeed = motionNetSpeed.update(vehiclePosition);
-    // 预测位置环：计划位置 = 参考速度积分，误差用 (实际 + 净速度×前视) 计算，
-    // 输出只是速度增量；positionKp=0 时恒为 0，等价于纯速度环。
-    float posCorrection = motionPlan.update(motionSpeedReference, vehiclePosition, netSpeed, true, .01f, positionKp, MAX_POSITION_RETURN_SPEED, POSITION_DEADBAND_COUNT);
-    motionLean.update(motionSpeedReference + posCorrection, netSpeed, true, .01f);
-    positionSpeedTarget = targetForwardSpeed = 0.0f;
-    speedError = speedIntegral = speedErrorPrev = speedErrorDotFilt = 0.0f;
-    speedPContribution = speedIContribution = 0.0f;
-    speedAngleCorrection = speedAngleUnclamped = speedAngleLimited = 0.0f;
-    return;
-  }
-  // 运动结束后的释放段：速度目标与倾角平滑回零，再由驻车环接管，不产生角度阶跃。
-  manualMotionWasBusy = false;
-  motionPlan.stop(vehiclePosition);
-  if (motionLean.busy() || fabsf(motionSpeedProfile.applied) > 0.0001f) {
-    motionSpeedProfile.update(0.0f, .01f);
-    motionLean.update(0.0f, vehicleSpeed, false, .01f);
-  }
-  bool positionHoldEnabled = positionKp > 0.000001f;
-  if (!jogPositionControl) {
-    if (positionHoldEnabled && !positionHoldWasEnabled && !positionHoldSuspended) {
-      captureCurrentPositionTarget();
-      positionError = 0.0f;
-    }
-    positionHoldWasEnabled = positionHoldEnabled;
-    if (positionHoldEnabled && !positionHoldSuspended) {
-      float effectivePositionError = positionError;
-      if (effectivePositionError > POSITION_DEADBAND_COUNT) effectivePositionError -= POSITION_DEADBAND_COUNT;
-      else if (effectivePositionError < - POSITION_DEADBAND_COUNT) effectivePositionError += POSITION_DEADBAND_COUNT;
-      else effectivePositionError = 0.0f;
-      positionSpeedTarget = positionKp * effectivePositionError;
-      if (positionSpeedTarget > MAX_POSITION_RETURN_SPEED) positionSpeedTarget = MAX_POSITION_RETURN_SPEED;
-      else if (positionSpeedTarget < - MAX_POSITION_RETURN_SPEED) positionSpeedTarget = - MAX_POSITION_RETURN_SPEED;
-      targetForwardSpeed = positionSpeedTarget;
-    } else {
-      positionSpeedTarget = 0.0f;
-      targetForwardSpeed = 0.0f;
-    }
-  }  // !jogPositionControl
-  bool jogAngleControl = jogPositionControl || positionLean.busy();
-  if (jogAngleControl) positionSpeedTarget = targetForwardSpeed = 0;
-  float jogDirection = speedLoopDirection * speedKp >= 0 ? 1.0f: - 1.0f;
-  positionLean.update(jogPositionControl ? positionError: 0, jogPositionControl, .01f, jogDirection);
-  targetForwardSpeed = positionSpeedReference.update(targetForwardSpeed, .01f);
-  // ---- SP 速度指令：唯一的速度设定入口 ----
-  // 与 ^ 手动通路互斥：^ 正在动作时清掉 SP，避免两套通路同时写目标速度。
-  if (manualMotionWasBusy) {
-    speedCmd = 0.0f;
-  } else if (speedCmd != 0.0f) {
-    targetForwardSpeed = speedCmd;  // 直接进入下面的经典速度 PI
-  }
-  if (jogPositionControl) positionSpeedTarget = targetForwardSpeed;
-  // --------------------------------------------------------
-  // 5. 总目标速度安全限幅
-  // --------------------------------------------------------
-  if (targetForwardSpeed > MAX_TARGET_FORWARD_SPEED) {
-    targetForwardSpeed = MAX_TARGET_FORWARD_SPEED;
-  }
-  if (targetForwardSpeed < - MAX_TARGET_FORWARD_SPEED) {
-    targetForwardSpeed = - MAX_TARGET_FORWARD_SPEED;
-  }
-  // --------------------------------------------------------
-  // 6. 速度误差
-  // --------------------------------------------------------
-  // 2026-11-12 回退：τ=0.25s 的速度低通把速度外环推过临界（pitch sd 0.17°→3.0°），
-  // 回到原始瞬时速度；滤波思路保留在 SPEED_MEAS_TAU_S 注释里，要用只能小步试。
-  vehicleSpeedFiltered = vehicleSpeed;
-  speedError = targetForwardSpeed - vehicleSpeed;
-  // --------------------------------------------------------
-  // 7. 速度PI生成目标角。第一版严格采用成熟串级结构，
-  //
-  // 不使用速度预测、STEP直投或位置回位。
-  // --------------------------------------------------------
-  // 经典速度PI目标角通道：100Hz更新。
-  float speedErrDot = (speedError - speedErrorPrev) * 100.0f;
-  speedErrorDotFilt = 0.7f * speedErrorDotFilt + 0.3f * speedErrDot;  // 低通滤噪声
-  speedErrorPrev = speedError;
-  speedPContribution = speedKp * speedError;
-  float speedDContribution = speedKd * speedErrorDotFilt;
-  // 条件积分 + 抗饱和：禁止在外环无权限或输出继续撞向N限幅时累积。
-  if (jogAngleControl || manualForward.busy(millis()) || fabsf(speedKi) < 0.000001f) {
-    speedIntegral = 0.0f;
-  } else if (outerLoopAuthority >= 0.2f && fabsf(speedError) > SPEED_ERROR_DEADBAND) {
-    float candidateIntegral = speedIntegral + speedError * 0.01f;
-    if (candidateIntegral > SPEED_INTEGRAL_LIMIT) candidateIntegral = SPEED_INTEGRAL_LIMIT;
-    else if (candidateIntegral < - SPEED_INTEGRAL_LIMIT) candidateIntegral = - SPEED_INTEGRAL_LIMIT;
-    float currentUnclamped = speedLoopDirection * (speedPContribution + speedKi * speedIntegral + speedDContribution);
-    float candidateUnclamped = speedLoopDirection * (speedPContribution + speedKi * candidateIntegral + speedDContribution);
-    if (fabsf(candidateUnclamped) <= MAX_SPEED_ANGLE || fabsf(candidateUnclamped) < fabsf(currentUnclamped)) {
-      speedIntegral = candidateIntegral;
-    }
-  }
-  speedIContribution = speedKi * speedIntegral;
-  // Manual forward/reverse uses the operator target with P/D only; no hidden I trim.
-  speedAngleUnclamped = speedLoopDirection * (speedPContribution + speedIContribution + speedDContribution) + positionLean.applied;
-  float desiredSpeedAngle = speedAngleUnclamped;
-  // 旧预测和STEP直投实验通道完全退出控制，仅保留零值遥测以兼容历史CSV。
-  speedDirectUnclampedOutput = 0.0f;
-  speedDirectOutput = 0.0f;
-  speedAccelerationFiltered = 0.0f;
-  speedPredictionDelta = 0.0f;
-  speedPredicted = vehicleSpeed;
-  speedPredictPrevSpeed = vehicleSpeed;
-  if (desiredSpeedAngle > MAX_SPEED_ANGLE) desiredSpeedAngle = MAX_SPEED_ANGLE;
-  if (desiredSpeedAngle < - MAX_SPEED_ANGLE) desiredSpeedAngle = - MAX_SPEED_ANGLE;
-  speedAngleLimited = desiredSpeedAngle;
-  // 速度环全部关闭时立即清零历史修正，保证纯直立环测试不被残留目标角污染。
-  if (fabsf(speedKp) < 0.000001f && fabsf(speedKi) < 0.000001f && fabsf(speedKd) < 0.000001f) {
-    positionLean.reset();
-    speedAngleCorrection = 0.0f;
-    speedIntegral = 0.0f;
-    speedPContribution = 0.0f;
-    speedIContribution = 0.0f;
-    speedAngleUnclamped = 0.0f;
-    speedAngleLimited = 0.0f;
-    speedErrorDotFilt = 0.0f;
-    speedErrorPrev = speedError;
-    speedDirectOutput = 0.0f;
-    speedDirectUnclampedOutput = 0.0f;
-    speedAccelerationFiltered = 0.0f;
-    speedPredictionDelta = 0.0f;
-    speedPredicted = vehicleSpeed;
-    speedPredictPrevSpeed = vehicleSpeed;
-    speedDirectAuthority = 0.0f;
-    positionSpeedTarget = 0.0f;
-    targetForwardSpeed = 0.0f;
-  } else {
-    float speedAngleDelta = desiredSpeedAngle - speedAngleCorrection;
-    if (speedAngleDelta > SPEED_ANGLE_SLEW_DEG_PER_UPDATE) speedAngleDelta = SPEED_ANGLE_SLEW_DEG_PER_UPDATE;
-    else if (speedAngleDelta < - SPEED_ANGLE_SLEW_DEG_PER_UPDATE) speedAngleDelta = - SPEED_ANGLE_SLEW_DEG_PER_UPDATE;
-    speedAngleCorrection += speedAngleDelta;
-  }
-  // --------------------------------------------------------
-
-}
-
-// ============================================================
-// 外环权限管理
-//
-// 使用相对机械平衡角，而不是相对 targetBalanceAngle。
-// 这样速度PI改变目标角时，不会影响“大角度判定”。
-// ============================================================
-void updateOuterLoopAuthority() {
-  float uprightError = pitch - balanceAngleOffset;
-  float absUprightError = fabsf(uprightError);
-  if (absUprightError <= OUTER_FULL_ANGLE_DEG) {
-    outerLoopAuthority = 1.0f;
-  } else if (absUprightError < OUTER_DISABLE_ANGLE_DEG) {
-    outerLoopAuthority = (OUTER_DISABLE_ANGLE_DEG - absUprightError) / (OUTER_DISABLE_ANGLE_DEG - OUTER_FULL_ANGLE_DEG);
-  } else {
-    outerLoopAuthority = 0.0f;
-  }
-  // 目标角必须受同一个权限控制。
-  // 大角度时直接回到机械平衡角，让直立PD全力救车。
-  // Normal operation uses the speed-loop angle; held motion replaces it smoothly.
-  // The held angle is relative to O. 2026-11-05：前后运动改为速度闭环，不再写死角度。
-  float pitchOffset = manualForward.normalAuthority() * speedAngleCorrection + motionLean.applied;
-  targetBalanceAngle = balanceAngleOffset + outerLoopAuthority * pitchOffset;
-  // 大角度时释放历史积分，避免恢复后旧积分继续把车推走
-  if (outerLoopAuthority < 0.2f) {
-    speedIntegral *= SPEED_INTEGRAL_DECAY_BIG_ANGLE;
-  }
-
-}
-
-// ============================================================
-// 位置快速拉回
-//
-// 400Hz直接读取编码器累计位置。
-// 不经过50ms速度窗口，所以只要编码器出现少量位移就开始反向拉回。
-// ============================================================
-void updatePositionHold() {
-  int32_t a, b;
-  noInterrupts();
-  a = encoder1Count;
-  b = encoder2Count;
-  interrupts();
-  int mode = (encoder1Trusted && encoder2Trusted) ? 0: (encoder1Trusted ? 1: (encoder2Trusted ? 2: 3));
-  vehiclePosition = positionOdom.update(a, b, mode);
-  if (positionJog.active && (fabsf(pitch - balanceAngleOffset) > 5 || fabsf(speedKp) < .000001f)) {
-    stopPositionJog(PositionJog::FAULT);
-    return;
-  }
-  if (positionJog.active && mode != positionJog.source) {
-    stopPositionJog(PositionJog::SOURCE_CHANGED);
-    return;
-  }
-  // Follow actual position throughout manual tilt, return-to-O and speed-loop handoff.
-  // The parking loop must not accumulate an error against a stale pre-motion target.
-  bool followPosition = manualMotionIsActive() || manualForward.normalAuthority() < 1.0f;
-  bool resume = positionHoldSuspended && !followPosition;
-  positionHoldSuspended = followPosition;
-  if (followPosition) {
-    if (positionJog.active) stopPositionJog(PositionJog::STOP);
-    targetVehiclePosition = vehiclePosition;
-    positionSpeedReference.reset();
-    positionError = positionSpeedTarget = targetForwardSpeed = 0;
-    return;
-  }
-  if (resume && !positionJog.active) targetVehiclePosition = vehiclePosition;
-  if (positionJog.active) targetVehiclePosition = positionJog.reference;
-  positionError = targetVehiclePosition - vehiclePosition;
-}
-
-// 把当前位置设为新的驻车位置。用于启用位置环、跌倒恢复和面板手动重设。
-void captureCurrentPositionTarget() {
-  if (positionJog.active) positionJog.cancel(PositionJog::STOP);
-  int32_t a, b;
-  noInterrupts();
-  a = encoder1Count;
-  b = encoder2Count;
-  interrupts();
-  int mode = (encoder1Trusted && encoder2Trusted) ? 0: (encoder1Trusted ? 1: (encoder2Trusted ? 2: 3));
-  vehiclePosition = positionOdom.update(a, b, mode);
-  // Capturing a parking target never rewrites encoder counters or the odometry coordinate.
-  targetVehiclePosition = vehiclePosition;
-  positionError = positionSpeedTarget = 0;
-  targetForwardSpeed = positionSpeedReference.applied;
-  speedIntegral = 0;
-  speedErrorPrev = targetForwardSpeed - vehicleSpeed;
-  speedErrorDotFilt = 0;
-}
-
-void stopPositionJog(int reason) {
-  positionJog.cancel(reason);
-  captureCurrentPositionTarget();
-}
-
-// ============================================================
-// 直立环 PD
-// ============================================================
-void updateBalanceLoop() {
-  float angleError = targetBalanceAngle - pitch;
-  // --------------------------------------------------------
-  // 1. 直立PD
-  // --------------------------------------------------------
-  // 连续角度死区：死区外扣除死区宽度，避免 P 项在边界从 0 突跳。
-  // 死区内只将 P 项误差置零，保留陀螺仪 D 阻尼来抑制车体晃动。
-  float effectiveAngleError = 0.0f;
-  if (angleError > BALANCE_ANGLE_DEADBAND_DEG) {
-    effectiveAngleError = angleError - BALANCE_ANGLE_DEADBAND_DEG;
-  } else if (angleError < - BALANCE_ANGLE_DEADBAND_DEG) {
-    effectiveAngleError = angleError + BALANCE_ANGLE_DEADBAND_DEG;
-  }
-  balancePOutput = balanceDirection * balanceKp * effectiveAngleError;
-  balanceDOutput = balanceDirection * (- balanceKd * gyroPitchRate);
-  balanceOutput = balancePOutput + balanceDOutput;
-  // --------------------------------------------------------
-  // 2. 直接速度/位置修正权限
-  //
-  // 与目标角使用同一个 outerLoopAuthority。
-  // 大角度时速度环和位置环全部退出。
-  // --------------------------------------------------------
-  speedDirectAuthority = 0.0f;
-  // --------------------------------------------------------
-  // 3. 步进电机加速度式直立控制
-  //
-  // B-ROBOT类成熟结构：直立PD给出速度增量，累加后才得到STEP频率。
-  // 100Hz计算下一个频率端点；端点增量在随后的4个400Hz周期线性执行。
-  // 这样R/S/B/H/L和每10ms累计变化量均保持不变，只消除频率阶跃。
-  // --------------------------------------------------------
-  balanceAccelDivider++;
-  if (balanceAccelDivider >= BALANCE_ACCEL_UPDATE_DIVIDER) {
-    balanceAccelDivider = 0;
-    balanceAccelRawOutput = BALANCE_ACCEL_SCALE * balanceOutput;
-    // 低速时保留 S 的完整纠偏能力；只有已经处于高速、且本拍仍在
-    // 朝同一方向继续加速时，才收紧增量，避免STEP频率再陡升而丢步。
-    // 反向增量是制动，始终使用 S，不能被这层保护削弱。
-    balanceAccelEffectiveLimit = BALANCE_OUTPUT_SLEW_HZ;
-    highSpeedAccelProtectionActive = false;
-    const bool acceleratingFurther = integratedMotorSpeedCommand * balanceAccelRawOutput > 0.0f;
-    if (fabsf(integratedMotorSpeedCommand) >= HIGH_SPEED_ACCEL_START_HZ && acceleratingFurther) {
-      balanceAccelEffectiveLimit = HIGH_SPEED_ACCEL_LIMIT_HZ;
-      if (balanceAccelEffectiveLimit > BALANCE_OUTPUT_SLEW_HZ) balanceAccelEffectiveLimit = BALANCE_OUTPUT_SLEW_HZ;
-      highSpeedAccelProtectionActive = true;
-    }
-    // 换向软过渡生效：翻转后的窗口内把增量限幅再压小一档
-    if (reversalSoftTicksRemaining > 0) {
-      reversalSoftTicksRemaining--;
-      balanceAccelEffectiveLimit *= REVERSAL_SOFT_LIMIT_SCALE;
-    }
-    balanceAccelLimitedOutput = balanceAccelRawOutput;
-    if (balanceAccelLimitedOutput > balanceAccelEffectiveLimit) balanceAccelLimitedOutput = balanceAccelEffectiveLimit;
-    else if (balanceAccelLimitedOutput < - balanceAccelEffectiveLimit) balanceAccelLimitedOutput = - balanceAccelEffectiveLimit;
-    balanceAccelSubstepOutput = balanceAccelLimitedOutput / (float) BALANCE_ACCEL_UPDATE_DIVIDER;
-  }
-  // 最小平滑层：每2.5ms推进原100Hz端点增量的1/4。
-  // 不重新计算PD，不改变端点、总斜率或任何现有调参量。
-  float stepIncrement = balanceAccelSubstepOutput;
-  float candidateSpeed = integratedMotorSpeedCommand + stepIncrement;
-  int nextSign = candidateSpeed > 1.0f ? 1: (candidateSpeed < - 1.0f ? - 1: 0);
-  if (nextSign != 0 && prevIntegratedSpeedCmdSign != 0 && nextSign != prevIntegratedSpeedCmdSign) {
-    if (reversalSoftTicksRemaining == 0) {
-      balanceAccelSubstepOutput *= REVERSAL_SOFT_LIMIT_SCALE;
-      balanceAccelLimitedOutput *= REVERSAL_SOFT_LIMIT_SCALE;
-      balanceAccelEffectiveLimit *= REVERSAL_SOFT_LIMIT_SCALE;
-      stepIncrement = balanceAccelSubstepOutput;
-    }
-    reversalSoftTicksRemaining = REVERSAL_SOFT_TICKS;
-  }
-  integratedMotorSpeedCommand += stepIncrement;
-  int actualSign = integratedMotorSpeedCommand > 1.0f ? 1: (integratedMotorSpeedCommand < - 1.0f ? - 1: 0);
-  if (actualSign != 0) prevIntegratedSpeedCmdSign = actualSign;
-  if (integratedMotorSpeedCommand > BALANCE_OUTPUT_LIMIT_HZ) integratedMotorSpeedCommand = BALANCE_OUTPUT_LIMIT_HZ;
-  else if (integratedMotorSpeedCommand < - BALANCE_OUTPUT_LIMIT_HZ) integratedMotorSpeedCommand = - BALANCE_OUTPUT_LIMIT_HZ;
-  speedDirectAppliedOutput = 0.0f;
-  mixedBalanceOutput = integratedMotorSpeedCommand;
-  if (mixedBalanceOutput > BALANCE_OUTPUT_LIMIT_HZ) limitedBalanceOutput = BALANCE_OUTPUT_LIMIT_HZ;
-  else if (mixedBalanceOutput < - BALANCE_OUTPUT_LIMIT_HZ) limitedBalanceOutput = - BALANCE_OUTPUT_LIMIT_HZ;
-  else limitedBalanceOutput = mixedBalanceOutput;
-  // 频率已经由100Hz加速度积分平滑变化，不再对结果做第二次slew。
-  finalBalanceOutput = limitedBalanceOutput;
-  lastFinalBalanceOutput = finalBalanceOutput;
-
-}
-
-// ============================================================
-// 转向环 PD
-//
-// 当前Kp/Kd = 0
-// ============================================================
-void updateTurnLoop() {
-  float turnError = targetTurnRate - gyroTurnRate;
-  float derivative = (turnError - lastTurnError) / CONTROL_DT;
-  lastTurnError = turnError;
-  float legacy = turnKp * turnError + turnKd * derivative;
-  turnOutput = manualTurn.update(millis(), CONTROL_DT, pitch - balanceAngleOffset, BALANCE_OUTPUT_LIMIT_HZ, finalBalanceOutput, legacy);
-}
-
-// ============================================================
 // 蓝牙发送
 // 网页原来的解析格式无需修改：
 // time_ms,accPitch,kalmanPitch
@@ -816,8 +217,8 @@ void sendTelemetry() {
   (int) balanceOutput, // 6  直立PD合计 Hz
   (int)(speedAngleCorrection * 100.0f), // 7  速度目标角修正 *100
   (int)(outerLoopAuthority * 1000.0f), // 8  外环权限 *1000
-  (int) speedDirectOutput, // 9  直接制动独立限幅后、权限前 Hz
-  (int) speedDirectAppliedOutput, // 10 权限后的直接制动 Hz
+  (int) 0, // 9  直接制动通道已删除（SPEC §5），列位保留填 0
+  (int) 0, // 10 直接制动通道已删除（SPEC §5），列位保留填 0
   (int)(positionSpeedTarget * 1000.0f), // 11 位置环生成的目标速度 *1000
   (int) mixedBalanceOutput, // 12 直立+直接制动，限幅前 Hz
   (int) limitedBalanceOutput, // 13 总输出限幅后、slew前 Hz
@@ -825,10 +226,10 @@ void sendTelemetry() {
   (int) turnOutput, // 15 转向环输出 Hz
   (int)(vehicleSpeed * 1000.0f), // 16 融合速度 *1000
   (int)(rawVehicleSpeed * 1000.0f), // 17 编码器原始速度 *1000
-  (int)(speedAccelerationFiltered * 1000.0f), // 18 滤波速度加速度 *1000
-  (int)(speedPredicted * 1000.0f), // 19 预测速度 *1000
-  (int)(speedPredictionDelta * 1000.0f), // 20 预测增量 *1000
-  (int) speedDirectUnclampedOutput, // 21 STEP独立H限幅前 Hz
+  (int) 0, // 18 旧预测通道已删除（SPEC §5），列位保留填 0
+  (int)(telemetrySpeedSnapshot100Hz * 1000.0f), // 19 外环时刻速度快照 *1000（列位/语义不变）
+  (int) 0, // 20 旧预测通道已删除（SPEC §5），列位保留填 0
+  (int) 0, // 21 直接制动通道已删除（SPEC §5），列位保留填 0
   (int)(vehiclePosition * 100.0f), // 22 位置 *100
   (int)(positionError * 100.0f), // 23 位置误差 *100
   (long) encoder1Count, // 24 编码器1计数
@@ -972,8 +373,6 @@ void setup() {
   speedKalmanQ = SPEED_KALMAN_Q_BASE;
   speedKalmanR = SPEED_KALMAN_R_LOW_SPEED;
   speedError = 0.0f;
-  speedDirectOutput = 0.0f;
-  speedDirectAuthority = 0.0f;
   finalBalanceOutput = 0.0f;
   targetForwardSpeed = 0.0f;
   targetBalanceAngle = balanceAngleOffset;
@@ -1077,7 +476,7 @@ static void paramApply(const float * values) {
 
 // 写 flash 会停住取指 0.5ms（换扇区擦除可到 1s+），必须车静止才允许
 static bool paramWriteAllowed() {
-  return !manualMotionIsActive() && !positionJog.active && imuFailCount == 0;
+  return !remote::isActive() && !positionJog.active && imuFailCount == 0;
 }
 
 // 开机：先抄编译默认值（DEF 用），再尝试用 flash 里的记录覆盖。
@@ -1349,10 +748,6 @@ void handleBtCommand(char * cmd, uint8_t len) {
     reply.print(SPEED_ERROR_DEADBAND, 2);
     reply.print(" E=");
     reply.print(speedKd, 3);
-    reply.print(" Q=");
-    reply.print(speedDirectKp, 3);
-    reply.print(" A=");
-    reply.print(speedPredictHorizon, 3);
     reply.print(" B=");
     reply.print(HIGH_SPEED_ACCEL_START_HZ, 1);
     reply.print(" H=");
@@ -1460,15 +855,15 @@ void handleBtCommand(char * cmd, uint8_t len) {
       return;
     }
     if (positionJog.newer(id)) {
-      if (delta != 0 && (manualMotionIsActive() || imuFailCount != 0 || fabsf(pitch - balanceAngleOffset) > 5 || fabsf(speedKp) < .000001f || positionLean.kp <= 0 || !(encoder1Trusted || encoder2Trusted))) {
+      if (delta != 0 && (remote::isActive() || imuFailCount != 0 || fabsf(pitch - balanceAngleOffset) > 5 || fabsf(speedKp) < .000001f || positionLean.kp <= 0 || !(encoder1Trusted || encoder2Trusted))) {
         reply.println("ERR:jog needs upright idle vehicle");
         return;
       }
       if (delta == 0) {
         positionJog.start(id, 0, vehiclePosition, rawSpeedEncoderMode, millis());
-        captureCurrentPositionTarget();
+        remote::captureCurrentPositionTarget();
       } else {
-        updatePositionHold();
+        remote::positionHold();
         positionJog.start(id, delta, vehiclePosition, rawSpeedEncoderMode, millis());
         targetVehiclePosition = positionJog.reference;
         positionHoldWasEnabled = positionKp > 0.000001f;
@@ -1498,7 +893,7 @@ void handleBtCommand(char * cmd, uint8_t len) {
       reply.println("ERR:forward gear out of range");
       return;
     }
-    if (turn != 0 && positionJog.active) stopPositionJog(PositionJog::STOP);
+    if (turn != 0 && positionJog.active) remote::stopPositionJog(PositionJog::STOP);
     if (forward != 0 && !manualForward.busy(millis())) {
       float currentOffset = targetBalanceAngle - balanceAngleOffset;
       if (manualForward.needsZero || imuFailCount != 0 || fabsf(pitch - balanceAngleOffset) > 5 || !isfinite(currentOffset) || fabsf(currentOffset) > ManualPitchControl::maxAngle) {
@@ -1563,7 +958,7 @@ void handleBtCommand(char * cmd, uint8_t len) {
       break;
     case 'V':
     case 'v':
-      if (val != 0 && positionJog.active) stopPositionJog(PositionJog::STOP);
+      if (val != 0 && positionJog.active) remote::stopPositionJog(PositionJog::STOP);
       manualTurn.command(val, millis());
       val = manualTurn.requested;
       break;
@@ -1599,17 +994,9 @@ void handleBtCommand(char * cmd, uint8_t len) {
     case 'e':
       speedKd = val;
       break;
-    case 'Q':
-    case 'q':
-      speedDirectKp = fabsf(val);
-      break;
     case 'H':
     case 'h':
       HIGH_SPEED_ACCEL_LIMIT_HZ = fabsf(val);
-      break;
-    case 'A':
-    case 'a':
-      speedPredictHorizon = fabsf(val);
       break;
     case 'B':
     case 'b':
@@ -1621,7 +1008,7 @@ void handleBtCommand(char * cmd, uint8_t len) {
         bool wasEnabled = positionKp > 0.000001f;
         positionKp = fabsf(val);
         bool nowEnabled = positionKp > 0.000001f;
-        if (!wasEnabled && nowEnabled && !positionHoldSuspended) captureCurrentPositionTarget();
+        if (!wasEnabled && nowEnabled && !positionHoldSuspended) remote::captureCurrentPositionTarget();
         if (!nowEnabled) {
           positionSpeedTarget = 0.0f;
           targetForwardSpeed = 0.0f;
@@ -1639,7 +1026,7 @@ void handleBtCommand(char * cmd, uint8_t len) {
       break;
     case 'C':
     case 'c':
-      captureCurrentPositionTarget();
+      remote::captureCurrentPositionTarget();
       break;
     default:
       prepareCommandResponse();
@@ -1694,8 +1081,6 @@ void loop() {
     clearControlOutputDiagnostics();
     balanceOutput = 0.0f;
     finalBalanceOutput = 0.0f;
-    speedDirectOutput = 0.0f;
-    speedDirectAuthority = 0.0f;
     speedIntegral = 0.0f;
     speedAngleCorrection = 0.0f;
     speedErrorPrev = 0.0f;
@@ -1743,8 +1128,6 @@ void loop() {
     balanceOutput = 0.0f;
     turnOutput = 0.0f;
     speedError = 0.0f;
-    speedDirectOutput = 0.0f;
-    speedDirectAuthority = 0.0f;
     speedIntegral = 0.0f;
     speedAngleCorrection = 0.0f;
     speedErrorPrev = 0.0f;
@@ -1776,8 +1159,8 @@ void loop() {
   }
   // --------------------------------------------------------
   // 先在400Hz读取累计位置，20Hz位置外环使用最新位置。
-  manualForward.update(millis(), CONTROL_DT, pitch - balanceAngleOffset);
-  updatePositionHold();
+  remote::tick(CONTROL_DT);
+  remote::positionHold();
   // 速度PI外环100Hz（成熟步进平衡车串级结构）
   //
   // 400Hz控制循环，每4次执行一次 = 10ms。
@@ -1786,29 +1169,38 @@ void loop() {
   if (outerLoopDivider >= 4) {
     outerLoopDivider = 0;
     control::tick100();      // 编码器速度估计 + Kalman 修正
-    updateOuterLoop();
+    bool jogPos = false;
+    bool jogAngle = false;
+    if (!remote::tick100(jogPos, jogAngle)) {      // 远控运动驱动优先时接管本拍
+      control::outerLoop(jogPos, jogAngle, remote::motionWasBusy(),
+                          remote::manualPitchBusy(), remote::jogLeanOffset());
+    }
+    if (leanResetRequested) {                      // 速度环整体关闭 → 立刻清 jog 倾角
+      remote::resetLean();
+      leanResetRequested = false;
+    }
   }
   // --------------------------------------------------------
   // 外环权限管理400Hz
   // 大角度时速度/位置环平滑退出，直立PD优先
   // --------------------------------------------------------
-  updateOuterLoopAuthority();
+  control::updateAuthority(remote::normalAuthority(), remote::leanOffset());
   // --------------------------------------------------------
   // 位置已在外环计算前更新
   // --------------------------------------------------------
-  // updatePositionHold() 已在本周期前面执行
+  // remote::positionHold() 已在本周期前面执行
   // --------------------------------------------------------
   // 直立环400Hz
   // --------------------------------------------------------
-  updateBalanceLoop();
+  control::updateBalance();
   // --------------------------------------------------------
   // 转向环400Hz
   // --------------------------------------------------------
-  updateTurnLoop();
+  remote::updateTurn();
   // --------------------------------------------------------
   // 电机合成
   // --------------------------------------------------------
-  control::mixMotors(turnOutput);
+  control::mixMotors(remote::turnOffset());
   // ---- 250ms 遥测窗口极值累积（必须在所有控制量算完后）----
   {
     float aGyro = fabsf(gyroPitchRate);
