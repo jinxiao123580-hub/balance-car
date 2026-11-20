@@ -62,6 +62,9 @@ float lastFinalBalanceOutput = 0.0f;
 int32_t prevIntegratedSpeedCmdSign = 0;  // 上一端点周期 integratedMotorSpeedCommand 符号
 uint16_t reversalSoftTicksRemaining = 0;  // 换向后剩余软过渡端点周期数
 
+// 倒地保护连续确认计数
+uint8_t fallConfirmCount = 0;
+
 namespace control {
 
 // ============================================================
@@ -148,6 +151,32 @@ void updateBalance() {
   finalBalanceOutput = limitedBalanceOutput;
   lastFinalBalanceOutput = finalBalanceOutput;
 
+}
+
+// ============================================================
+// 停机/故障统一清零：控制侧输出与积分（原 clearControlOutputDiagnostics 的控制部分）
+// ============================================================
+void clearOutputDiagnostics() {
+  balancePOutput = 0.0f;
+  balanceDOutput = 0.0f;
+  balanceOutput = 0.0f;
+  turnOutput = 0.0f;
+  telemetrySpeedSnapshot100Hz = 0.0f;  // 遥测第19列快照（原预测速度列位）
+  positionSpeedTarget = 0.0f;
+  positionError = 0.0f;
+  mixedBalanceOutput = 0.0f;
+  limitedBalanceOutput = 0.0f;
+  finalBalanceOutput = 0.0f;
+  balanceAccelRawOutput = 0.0f;
+  balanceAccelLimitedOutput = 0.0f;
+  balanceAccelEffectiveLimit = 0.0f;
+  highSpeedAccelProtectionActive = false;
+  balanceAccelSubstepOutput = 0.0f;
+  integratedMotorSpeedCommand = 0.0f;
+  prevIntegratedSpeedCmdSign = 0;
+  reversalSoftTicksRemaining = 0;
+  balanceAccelDivider = 0;
+  lastFinalBalanceOutput = 0.0f;
 }
 
 }  // namespace control

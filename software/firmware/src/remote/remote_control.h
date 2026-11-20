@@ -48,6 +48,7 @@ float turnOffset();                     // 等价 turnOutput
 float normalAuthority();                // 等价 manualForward.normalAuthority()
 bool motionWasBusy();                   // 等价 manualMotionWasBusy
 void resetLean();                       // 速度环整体关闭时清零 jog 倾角
+void resetFault();                      // 停机/故障统一清零远控状态机（原 clearControlOutputDiagnostics 远控部分）
 bool manualPitchBusy();                 // 等价 manualForward.busy(millis())
 float jogLeanOffset();                  // 等价 positionLean.applied
 

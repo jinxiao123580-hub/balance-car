@@ -28,7 +28,7 @@ float SPEED_INTEGRAL_LIMIT = 50.0f;  // 速度PI积分累积上限（误差×秒
 //        ↓
 // 速度误差 = target - Kalman融合速度
 //        ↓
-// 速度直投（P×WHEEL_TO_HZ_SCALE + 积分Gain）→ 直接叠加STEP Hz
+// 速度直投（P×比例 + 积分Gain）→ 直接叠加STEP Hz（该通道已退出控制，仅历史说明）
 //        ↓
 // 直立PD（400Hz）
 //        ↓
@@ -54,10 +54,8 @@ float MAX_TARGET_FORWARD_SPEED = 30.0f;
 // ============================================================
 float OUTER_FULL_ANGLE_DEG = 5.0f;  // |pitch-平衡点| <= 此角：外环全权限
 float OUTER_DISABLE_ANGLE_DEG = 10.0f;  // >=此角：外环退出，只留直立PD
-// 直立环输出衰减系数（verticalLoopGain）。range 0~1。
-// 现在混合输出 = verticalLoopGain*balanceOutput + outerLoopAuthority*(speedDirect+positionDirect)。
+// 直立环衰减的历史参数（已并入外环权限，不再单独存在）。range 0~1。
 // 用户方案：削弱直立环(如0.7)给速度环让权重，速度环直接叠加到轮速而非改目标角。
-float verticalLoopGain = 0.70f;
 // 外环当前权限：0~1
 float outerLoopAuthority = 1.0f;
 // ============================================================
@@ -108,7 +106,7 @@ float POSITION_DEADBAND_COUNT = 12.0f;  // 蓝牙M：位置死区，平均编码
 float positionError = 0.0f;
 float positionSpeedTarget = 0.0f;
 
-// 遥测第 19 列：外环时刻的 vehicleSpeed 快照（原 speedPredicted 的列位，值不变）
+// 遥测第 19 列：外环时刻的 vehicleSpeed 快照（原预测速度列位，值不变）
 float telemetrySpeedSnapshot100Hz = 0.0f;
 
 // 速度环整体关闭时，请求远控清零 jog 倾角（由 main 立即转发 remote::resetLean()）
@@ -178,7 +176,7 @@ void outerLoop(bool jogPositionControl, bool jogAngleControl, bool motionWasBusy
   // Manual forward/reverse uses the operator target with P/D only; no hidden I trim.
   speedAngleUnclamped = speedLoopDirection * (speedPContribution + speedIContribution + speedDContribution) + jogLeanOffset;
   float desiredSpeedAngle = speedAngleUnclamped;
-  // 遥测第 19 列：保留外环时刻的速度快照（原 speedPredicted 列位，数值不变）。
+  // 遥测第 19 列：保留外环时刻的速度快照（原预测速度列位，数值不变）。
   telemetrySpeedSnapshot100Hz = vehicleSpeed;
   if (desiredSpeedAngle > MAX_SPEED_ANGLE) desiredSpeedAngle = MAX_SPEED_ANGLE;
   if (desiredSpeedAngle < - MAX_SPEED_ANGLE) desiredSpeedAngle = - MAX_SPEED_ANGLE;

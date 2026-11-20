@@ -1,7 +1,7 @@
 #pragma once
 // ============================================================
 // control/attitude.{h,cpp} — 姿态融合：Kalman → pitch / pitchRate
-// （原 updateComplementary() 为死代码，按 SPEC §5 删除）
+// （原互补滤波函数为死代码，按 SPEC §5 删除）
 // ============================================================
 #include <Arduino.h>
 

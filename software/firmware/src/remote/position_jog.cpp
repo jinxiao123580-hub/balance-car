@@ -1,6 +1,16 @@
 #include "remote/position_jog.h"
 #include "remote/remote_control.h"
 
+// 车辆相对开机/重新站立位置的累计位移，单位为平均编码器count
+float vehiclePosition = 0.0f;
+
+// 位置零点对应的两个编码器累计计数
+int32_t positionZeroCount1 = 0;
+int32_t positionZeroCount2 = 0;
+
+// 目标位置固定为0，即尽量回到启动位置
+float targetVehiclePosition = 0.0f;
+
 namespace remote {
 
 // ============================================================

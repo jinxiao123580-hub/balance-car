@@ -91,8 +91,6 @@ const float REVERSAL_SOFT_LIMIT_SCALE = 0.25f;  // 窗口内限幅×0.25（S=200
 // 速度外环用低通后的速度，摆动被压掉一个数量级，9mm/s 级的直流指令仍完整保留。
 const float SPEED_MEAS_TAU_S = 0.25f;
 
-const float SPEED_ACCEL_FILTER_ALPHA = 0.80f;  // 20Hz速度差分低通：越大越平滑
-
 // 2026-11-19 实测：这是稳定边界，不是"越大越有力"。
 // N=2.0 时速度误差一大，外环就反向往死里拽 2°，直接翻车；
 // 收到 0.8° 后：起步 0.96° 被截到 0.8°（仍破粘），反向最大也只 0.8°，拽不翻。
@@ -101,33 +99,10 @@ const float SPEED_ACCEL_FILTER_ALPHA = 0.80f;  // 20Hz速度差分低通：越�
 // 用来防止目标角在 +/-N 之间瞬间跳变。
 const float SPEED_ANGLE_SLEW_DEG_PER_UPDATE = 0.10f;  // 100Hz外环，等效最大10deg/s
 
-// 轮速→STEP Hz 量纲标定放大：rawVehicleSpeed 单位是count/50ms，与直立环STEP Hz差数十倍。
-// 直投= Kp*Q * speedError * THIS_SCALE，让 Q(speedDirectKp) 从此真正有发力意义。
-const float WHEEL_TO_HZ_SCALE = 4.0f;  // 实测定标：usable speed≈30/50ms@均值、finalHz≈2167。scale=4 → 有效Q≈5*4=20直投均值可达final的~15-25%。过大(20)会爆MAX。
-
-// 姿态接近目标时允许速度直接项参与
-const float SPEED_DIRECT_FULL_ANGLE = 2.0f;  // <=2°：100%
-
-const float SPEED_DIRECT_DISABLE_ANGLE = 4.0f;  // >=4°：0%
-
-// 角速度太大时，优先救姿态，关闭速度直接项
-const float SPEED_DIRECT_MAX_GYRO_DPS = 80.0f;
-
 // ============================================================
 // 电机
 // ============================================================
 const float MOTOR_STOP_THRESHOLD_HZ = 1.0f;
-
-const float PWM_UPDATE_MIN_DELTA_HZ = 5.0f;
-
-// ============================================================
-// 电机输出保持 / 瞬时故障去抖
-// ============================================================
-const bool HOLD_LAST_OUTPUT_ON_ZERO = false;  // 直立输出为0时：true=短暂保持上次频率（防过零抖动），false=立即停
-
-// 仅允许短时间保持0输出。
-// 400Hz下3帧约7.5ms，避免过零换向时旧方向保持太久。
-const uint8_t ZERO_HOLD_MAX_CYCLES = 3;
 
 // 400Hz下8帧约20ms
 const uint8_t IMU_FAIL_CONFIRM_COUNT = 8;  // IMU读取连续失败8次(约20ms)才确认故障，防偶发去抖
@@ -214,10 +189,6 @@ const float PITCH_MOUNT_OFFSET_DEG = 0.0f;
 // 单步突变>5° 判为IMU/卡尔曼毛刺，用上一有效值替代，防止大跳变直接冲进直立PD造成震荡。
 const float PITCH_GLITCH_DEG = 5.0f;
 
-// ===== 互补滤波(取代 Kalman 姿态融合) =====
-// token: alpha=0.95 陀螺权重; 越接近1越信陀螺(平滑/信静止), 越小越信加速度(响应快)
-const float COMP_FILTER_INIT = 0.95f;  // 出厂默认陀螺权重, 蓝牙可调(Y字母)
-
 // 先用比较保守的一组阈值
 const float ACC_ERR_LOW = 0.04f;
 
@@ -228,8 +199,6 @@ const float ACC_ERR_HIGH = 0.10f;
 const float ACC_INNOV_HIGH = 20.0f;
 
 const float R_LOW_DYNAMIC = 0.02f;
-
-const float R_MID_DYNAMIC = 0.20f;  // 已不使用（8/21改连续插值后仅用LOW/HIGH两档），保留定义无害
 
 const float R_HIGH_DYNAMIC = 1.20f;
 

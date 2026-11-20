@@ -81,6 +81,19 @@ void resetLean() {
   positionLean.reset();
 }
 
+// ============================================================
+// 停机/故障统一清零：远控侧状态机（原 clearControlOutputDiagnostics 的远控部分）
+// ============================================================
+void resetFault() {
+  manualTurn.clear();
+  manualForward.clear();
+  positionJog.cancel(PositionJog::FAULT);
+  positionLean.reset();
+  positionSpeedReference.reset();  // Actual motor-stop fault only; odometry remains continuous.
+  positionHoldSuspended = false;
+  positionHoldWasEnabled = false;
+}
+
 bool manualPitchBusy() {
   return manualForward.busy(millis());
 }

@@ -15,4 +15,7 @@ namespace control {
 // 原 updateBalanceLoop()：400Hz 直立环
 void updateBalance();
 
+// 停机/故障统一清零：控制侧输出与积分（原 clearControlOutputDiagnostics 的控制部分）
+void clearOutputDiagnostics();
+
 }  // namespace control

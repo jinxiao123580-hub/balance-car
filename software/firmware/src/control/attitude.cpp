@@ -23,8 +23,6 @@ float P11 = 1.0f;
 float Q_angle = 0.01f;
 float Q_bias = 0.03f;
 // ===== 互补滤波(取代 Kalman 姿态融合) =====
-float COMP_ALPHA = 0.99f;  // 互补滤波权重: angle = a*(angle+gyro*dt)+(1-a)*accPitch
-float R_measure = 0.03f;
 
 // 加速度模长 / 动态测量噪声
 float accelMagnitude = 1.0f;
