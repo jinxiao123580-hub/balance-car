@@ -9,14 +9,14 @@
 #include "control/balance.h"
 #include "control/cascade.h"
 #include "remote/remote_control.h"
+#include "remote/manual_pitch.h"
+#include "remote/manual_turn.h"
+#include "remote/motion_drive.h"
+#include "remote/position_jog.h"
 #include <Wire.h>
 #include <SparkFun_BMI270_Arduino_Library.h>
 #include <HardwareTimer.h>
 #include <math.h>
-#include "manual_motion.h"
-#include "position_jog.h"
-#include "motion_drive.h"
-ManualPitchControl manualForward;
 
 // MKS TMC2209 V2.0 以独立 STEP/DIR 模式运行；不依赖 PDN_UART 启动。
 // ============================================================
@@ -36,12 +36,6 @@ ManualPitchControl manualForward;
 // OLED完全不参与运行。
 // ============================================================
 HardwareSerial BTSerial(BT_RX_PIN, BT_TX_PIN);
-// ------------------------------------------------------------
-// 转向环 PD
-// 当前关闭
-// ------------------------------------------------------------
-float turnKp = 0.0f;
-float turnKd = 0.0f;
 
 uint8_t motor1ZeroHoldCount = 0;
 uint8_t motor2ZeroHoldCount = 0;
@@ -579,16 +573,16 @@ static bool handleTunableCommand(const char * cmd, uint8_t len, QueuedBtReply & 
     return true;
   }
   if (isSpeedCmd) {
-    speedCmd = ManualTurnControl::clamp(value, - MAX_TARGET_FORWARD_SPEED, MAX_TARGET_FORWARD_SPEED);
+    speedCmd = clampf(value, - MAX_TARGET_FORWARD_SPEED, MAX_TARGET_FORWARD_SPEED);
     reply.print("SP ok ");
     reply.println(speedCmd, 3);
     return true;
   }
   if (isMaxSpeed) {
     // range cap: below 0.5 means standstill, above 60 is far beyond the steppers
-    MAX_TARGET_FORWARD_SPEED = ManualTurnControl::clamp(value, 0.5f, 60.0f);
+    MAX_TARGET_FORWARD_SPEED = clampf(value, 0.5f, 60.0f);
     // shrinking the range may leave speedCmd out of bounds: pull it back at once
-    speedCmd = ManualTurnControl::clamp(speedCmd, - MAX_TARGET_FORWARD_SPEED, MAX_TARGET_FORWARD_SPEED);
+    speedCmd = clampf(speedCmd, - MAX_TARGET_FORWARD_SPEED, MAX_TARGET_FORWARD_SPEED);
     reply.print("MS ok ");
     reply.print(MAX_TARGET_FORWARD_SPEED, 3);
     reply.print(" SP=");
@@ -597,14 +591,14 @@ static bool handleTunableCommand(const char * cmd, uint8_t len, QueuedBtReply & 
   }
   if (isSpeedKp) {
     // 极性与大小都要试：允许 ±，限 ±0.5（SP=8 时 0.12 约合 1.0° 倾角）
-    speedKp = ManualTurnControl::clamp(value, - 0.5f, 0.5f);
+    speedKp = clampf(value, - 0.5f, 0.5f);
     reply.print("SV ok ");
     reply.println(speedKp, 4);
     return true;
   }
   {
     // 误差增益开太大等于把 0.9° 上限一步打满，只允许 0~0.15
-    motionLean.errorGain = ManualTurnControl::clamp(value, 0.0f, 0.15f);
+    motionLean.errorGain = clampf(value, 0.0f, 0.15f);
   }
   reply.print(" EG ");
   reply.print(motionLean.errorGain, 3);
@@ -880,7 +874,7 @@ void handleBtCommand(char * cmd, uint8_t len) {
   }
   if (key == '^' || key == '@') {
     float turn, forward;
-    if (!parseManualMotion(vbuf, turn, forward)) {
+    if (!remote::parseManualMotion(vbuf, turn, forward)) {
       reply.println("ERR:invalid motion");
       return;
     }

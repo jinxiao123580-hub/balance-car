@@ -1,6 +1,17 @@
 #pragma once
-#include "manual_turn.h"
+// ============================================================
+// remote/manual_pitch.{h,cpp} — 手动俯仰角目标（^ 通路的前后分量）
+// （ManualPitchControl 原样搬自 src/manual_motion.h，parseManualMotion 同）
+// ============================================================
+#include <Arduino.h>
 #include <cstdlib>
+#include <cmath>
+
+#include "core/cfg.h"
+#include "core/state.h"
+#include "core/util.h"
+#include "remote/manual_turn.h"
+
 
 // Fixed relative pitch with continuous angle/rate transitions, including release mid-ramp.
 struct ManualPitchControl {
@@ -69,14 +80,15 @@ struct ManualPitchControl {
     }
 };
 
-// Parse the entire frame before changing either axis: ^ turnHz,pitchDegrees.
-inline bool parseManualMotion(const char* value, float& turn, float& forward) {
-    char* end=nullptr;
-    float t=std::strtof(value,&end);
-    if (end==value || *end!=',' || !std::isfinite(t)) return false;
-    const char* second=end+1;
-    float f=std::strtof(second,&end);
-    if (end==second || *end!='\0' || !std::isfinite(f)) return false;
-    turn=t; forward=f;
-    return true;
-}
+// 手动俯仰实例（定义在 remote/remote_control.cpp）
+extern ManualPitchControl manualForward;
+
+// 手动俯仰实例（定义在 remote/remote_control.cpp）
+extern ManualPitchControl manualForward;
+
+namespace remote {
+
+// 解析整帧再改两个轴：^ turnHz,pitchDegrees
+bool parseManualMotion(const char * value, float & turn, float & forward);
+
+}  // namespace remote

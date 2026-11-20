@@ -1,7 +1,18 @@
 #pragma once
-#include "manual_turn.h"
+// ============================================================
+// remote/position_jog.{h,cpp} — 位置点动 / 位置保持 / 位置 P 外环
+// 结构体原样搬自 src/position_jog.h；调度与保持函数搬自 main.cpp。
+// ============================================================
+#include <Arduino.h>
+#include <cmath>
 #include <cstdlib>
 #include <cerrno>
+
+#include "core/cfg.h"
+#include "core/state.h"
+#include "core/util.h"
+#include "remote/manual_turn.h"
+
 
 struct PositionOdometry {
     int32_t last1=0,last2=0;
@@ -126,3 +137,35 @@ inline bool parseJogConfig(const char* text,float& kp,float& limit){
     if(end==capText||*end!='\0'||!PositionLeanControl::validConfig(p,cap))return false;
     kp=p;limit=cap;return true;
 }
+
+// 位置/点动实例（定义在 remote/remote_control.cpp）
+extern PositionOdometry positionOdom;
+extern PositionJog positionJog;
+extern PositionSpeedReference positionSpeedReference;
+extern PositionLeanControl positionLean;
+extern bool positionHoldWasEnabled;
+extern bool positionHoldSuspended;
+
+// 位置/点动实例（定义在 remote/remote_control.cpp）
+extern PositionOdometry positionOdom;
+extern PositionJog positionJog;
+extern PositionSpeedReference positionSpeedReference;
+extern PositionLeanControl positionLean;
+extern bool positionHoldWasEnabled;
+extern bool positionHoldSuspended;
+
+namespace remote {
+
+// 100Hz 点动调度（原 updateOuterLoop 开头 positionJog 分支）
+void positionJogTick(bool & jogPositionControl);
+
+// 100Hz 位置 P 外环（原 updateOuterLoop 的 !jogPositionControl 段）
+void positionHold100(bool jogPositionControl);
+
+// 400Hz 位置保持（原 updatePositionHold）
+void positionHold();
+
+void captureCurrentPositionTarget();
+void stopPositionJog(int reason);
+
+}  // namespace remote

@@ -15,25 +15,11 @@
 #include "control/cascade.h"
 #include "control/motor.h"
 
-// 远控对象定义（过渡期沿用 src/ 下的旧头文件，后续拆到 manual_pitch/manual_turn/
-// motion_drive/position_jog 各自头文件）
-#include "manual_motion.h"
-#include "manual_turn.h"
-#include "motion_drive.h"
-#include "position_jog.h"
-
-// ---- 状态对象（定义在 remote/remote_control.cpp，全局作用域）----
-extern PositionOdometry positionOdom;
-extern PositionJog positionJog;
-extern MotionSpeedProfile motionSpeedProfile;
-extern MotionLeanControl motionLean;
-extern MotionPositionPlan motionPlan;
-extern NetSpeedEstimator motionNetSpeed;
-extern PositionSpeedReference positionSpeedReference;
-extern PositionLeanControl positionLean;
-extern ManualTurnControl manualTurn;
-extern ManualPitchControl manualForward;
-extern bool manualMotionWasBusy;
+// 远控子模块
+#include "remote/manual_pitch.h"
+#include "remote/manual_turn.h"
+#include "remote/motion_drive.h"
+#include "remote/position_jog.h"
 
 namespace remote {
 

@@ -1,6 +1,14 @@
 #pragma once
-#include <cmath>
-#include <cstdint>
+// ============================================================
+// remote/manual_turn.{h,cpp} — 转向状态机 + 转向环 PD
+// （代码原样搬自 src/manual_turn.h 与 main.cpp 的 updateTurnLoop）
+// ============================================================
+#include <Arduino.h>
+
+#include "core/cfg.h"
+#include "core/state.h"
+#include "core/util.h"
+
 
 // STEP frequency differential, not a calibrated yaw rate.
 struct ManualTurnControl {
@@ -43,3 +51,16 @@ struct ManualTurnControl {
         return applied;
     }
 };
+
+// 转向状态机实例（定义在 remote/manual_turn.cpp）
+extern ManualTurnControl manualTurn;
+
+// 转向状态机实例（定义在 remote/manual_turn.cpp）
+extern ManualTurnControl manualTurn;
+
+namespace remote {
+
+// 转向环 PD（原 updateTurnLoop）：legacy PD + 转向状态机 → turnOutput
+void updateTurn();
+
+}  // namespace remote
