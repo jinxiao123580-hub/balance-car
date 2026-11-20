@@ -3,7 +3,6 @@
 namespace control {
 
 // ============================================================
-// ============================================================
 // TMC2209 双板 UART 配置（独立 STEP/DIR 模式下不编译）
 // 后轮TMC (Motor2: PA8 STEP / PB0 DIR) PDN_UART = PA9 (USART1)
 // 前轮TMC (Motor1: PA6 STEP / PA7 DIR) PDN_UART = PA2 (USART2)

@@ -3,6 +3,9 @@
 #include "core/state.h"
 #include "core/util.h"
 #include "control/motor.h"
+#include "control/imu.h"
+#include "control/attitude.h"
+#include "control/speed_est.h"
 #include <Wire.h>
 #include <SparkFun_BMI270_Arduino_Library.h>
 #include <HardwareTimer.h>
@@ -196,7 +199,6 @@ float speedErrorDotFilt = 0.0f;  // 速度误差微分阻尼：低通后的误�
 uint8_t motor1ZeroHoldCount = 0;
 uint8_t motor2ZeroHoldCount = 0;
 
-uint8_t imuFailCount = 0;
 uint8_t fallConfirmCount = 0;
 
 // ============================================================
@@ -217,29 +219,7 @@ float verticalLoopGain = 0.70f;
 // 外环当前权限：0~1
 float outerLoopAuthority = 1.0f;
 
-// ============================================================
-// BMI270（竖装：X=上下、Z=前后、Y=俯仰转轴）
-// ============================================================
-TwoWire BMIWire(BMI_SDA_PIN, BMI_SCL_PIN);
-BMI270 imu;
-
-int32_t lastEncoder1Count = 0;
-int32_t lastEncoder2Count = 0;
-float encoderSpeed1 = 0.0f;
-float encoderSpeed2 = 0.0f;
-
-// 编码器直接测得的车辆速度，单位：count / 50ms
-float rawVehicleSpeed = 0.0f;
-
-// 编码器信任门状态（见 updateOuterLoop）
-bool encoder1Trusted = true;
-bool encoder2Trusted = true;
-uint16_t encoder1MotionTicks = 0;
-uint16_t encoder2MotionTicks = 0;
-uint16_t encoderTrustWindowTicks = 0;
 uint32_t fallStopCount = 0;  // 倒地保护累计触发次数（遥测第43项，只增不减）
-int rawSpeedEncoderMode = 0;  // 0=双路平均 1=仅enc1 2=仅enc2（遥测第40项）
-
 // ---- 250ms 遥测窗口极值保持（穿透 250ms 采样盲区，抓短促尖峰）----
 // 用途：判定陀螺/加速度计是真的有尖峰（IMU 故障），还是车体真在剧烈振荡（控制增益问题）。
 // 每控制拍（400Hz）在 loop 末尾累积，sendTelemetry() 读取后清零。
@@ -252,10 +232,6 @@ float telemKalmanBiasMax = - 1e9f;
 // 换向软过渡状态（见 updateBalanceLoop）
 int32_t prevIntegratedSpeedCmdSign = 0;  // 上一端点周期 integratedMotorSpeedCommand 符号
 uint16_t reversalSoftTicksRemaining = 0;  // 换向后剩余软过渡端点周期数
-
-// 多源Kalman最终估计速度，仍统一使用 count / 50ms
-float vehicleSpeed = 0.0f;
-float vehicleSpeedFiltered = 0.0f;  // 速度环实际使用的低通速度（τ=SPEED_MEAS_TAU_S）
 
 // 车辆相对开机/重新站立位置的累计位移，单位为平均编码器count
 float vehiclePosition = 0.0f;
@@ -283,112 +259,6 @@ void captureCurrentPositionTarget();
 void stopPositionJog(int reason);
 void updatePositionHold();
 void paramStorageBoot();  // 开机从 flash 读回 22 项参数（定义在蓝牙命令区）
-
-// ------------------------------------------------------------
-// IMU前向加速度
-//
-// 竖装BMI270：X近似竖直，Z近似前后。
-// 利用Pitch去掉Z轴中的重力分量，再作为速度Kalman预测输入。
-// ------------------------------------------------------------
-float imuForwardAccelG = 0.0f;
-float imuForwardAccelFilteredG = 0.0f;
-
-// ------------------------------------------------------------
-// 速度Kalman参数
-//
-// 状态：vehicleSpeed
-// 预测：IMU线加速度
-// 测量：50ms编码器速度
-//
-// 由于当前没有轮径、编码器每米计数等绝对标定参数，
-// IMU_ACCEL_TO_SPEED_GAIN采用保守经验比例。
-// 后续只需调这个比例，不影响编码器长期基准。
-// ------------------------------------------------------------
-// 把 g 转换为 “count/50ms 每秒的变化率” 的经验系数
-float IMU_ACCEL_TO_SPEED_GAIN = 3.0f;
-
-// 基础过程噪声
-float SPEED_KALMAN_Q_BASE = 0.20f;
-
-// 电机命令越大，说明真实速度越可能快速变化，适当增大Q
-float SPEED_KALMAN_Q_MOTOR_GAIN = 0.0008f;
-
-// 编码器测量噪声：低速时量化严重，所以R较大
-float SPEED_KALMAN_R_LOW_SPEED = 0.20f;
-
-// 中高速时编码器连续性更好，R减小
-float SPEED_KALMAN_R_NORMAL = 0.08f;
-
-// Kalman协方差
-float speedKalmanP = 1.0f;
-
-// 当前使用的Q/R，仅调试观察
-float speedKalmanQ = SPEED_KALMAN_Q_BASE;
-float speedKalmanR = SPEED_KALMAN_R_LOW_SPEED;
-
-// IMU预测可信度。
-// 当 |a|-1g 偏差大时，说明振动/线性冲击严重，降低IMU预测作用。
-float imuSpeedPredictionTrust = 1.0f;
-
-// ============================================================
-// IMU数据
-// ============================================================
-float ax = 0.0f;
-float ay = 0.0f;
-float az = 0.0f;
-float gx = 0.0f;
-float gy = 0.0f;
-float gz = 0.0f;
-
-float pitchZero = PITCH_MOUNT_OFFSET_DEG;
-float gyroYZero = 0.0f;
-float gyroXZero = 0.0f;
-
-// ============================================================
-// 姿态
-// ============================================================
-float accPitch = 0.0f;
-float pitch = 0.0f;
-float gyroPitchRate = 0.0f;
-float gyroTurnRate = 0.0f;
-float gyroIntegAngle = 0.0f;  // 真实KF输入角（去掉kalmanBias后的gyro积分），400Hz累计
-
-// ============================================================
-// Kalman参数
-// Angle + Gyro Bias
-// ============================================================
-float kalmanAngle = 0.0f;
-float compAngle = 0.0f;  // 互补滤波角度状态(取代 kalmanAngle)
-
-float pitchPrev = 0.0f;  // 上一拍有效 pitch
-float kalmanBias = 0.0f;
-float P00 = 1.0f;
-float P01 = 0.0f;
-float P10 = 0.0f;
-float P11 = 1.0f;
-
-// 快速响应参数
-float Q_angle = 0.01f;
-float Q_bias = 0.03f;
-
-float COMP_ALPHA = 0.99f;  // 互补滤波权重: angle = a*(angle+gyro*dt)+(1-a)*accPitch
-
-// 基础测量噪声：静止/低动态时使用
-// 注意：当前姿态Kalman实际使用的是下面的 dynamicR（随加速度模长变化），本变量已不使用，仅保留定义。
-float R_measure = 0.03f;
-
-// ============================================================
-// 动态加速度可信度
-//
-// 原理：
-// 加速度模长接近1g -> 加速度计主要测到重力，可信度高
-// 加速度模长偏离1g -> 存在线性加速度/振动，降低加速度角权重
-//
-// dynamicR 越大，Kalman越不相信accPitch，越依赖陀螺仪预测。
-// ============================================================
-float accelMagnitude = 1.0f;
-float accelMagnitudeError = 0.0f;
-float dynamicR = 0.03f;
 
 // ============================================================
 // 控制变量
@@ -561,452 +431,11 @@ class QueuedBtReply: public Print {
 };
 
 // ============================================================
-// BMI270底层寄存器写（仅用于400Hz配置回读）
-// ============================================================
-bool bmiWriteRegister(uint8_t reg, uint8_t value) {
-  BMIWire.beginTransmission(BMI270_ADDRESS);
-  BMIWire.write(reg);
-  BMIWire.write(value);
-  uint8_t error = BMIWire.endTransmission();
-  delayMicroseconds(500);
-  return error == 0;
-
-}
-
-// ============================================================
-// BMI270底层寄存器读
-// ============================================================
-bool bmiReadRegister(uint8_t reg, uint8_t & value) {
-  BMIWire.beginTransmission(BMI270_ADDRESS);
-  BMIWire.write(reg);
-  if (BMIWire.endTransmission(false) != 0) {
-    return false;
-  }
-  uint8_t count = BMIWire.requestFrom(BMI270_ADDRESS, (uint8_t) 1);
-  if (count != 1 || !BMIWire.available()) {
-    return false;
-  }
-  value = BMIWire.read();
-  return true;
-
-}
-
-// ============================================================
-// 配置BMI270为400Hz
-// ============================================================
-bool configureBMI270_400Hz() {
-  // 历史实车配置：ODR=400Hz，性能滤波模式。
-  if (!bmiWriteRegister(BMI270_REG_ACC_CONF, BMI270_ACC_CONF_400HZ)) {
-    return false;
-  }
-  delay(5);
-  if (!bmiWriteRegister(BMI270_REG_GYR_CONF, BMI270_GYR_CONF_400HZ)) {
-    return false;
-  }
-  delay(10);
-  uint8_t accConf = 0;
-  uint8_t gyrConf = 0;
-  return bmiReadRegister(BMI270_REG_ACC_CONF, accConf) && bmiReadRegister(BMI270_REG_GYR_CONF, gyrConf) && accConf == BMI270_ACC_CONF_400HZ && gyrConf == BMI270_GYR_CONF_400HZ;
-}
-
-// ============================================================
-// BMI270读取；SparkFun库返回g和deg/s，后续融合量纲无需修改
-// ============================================================
-bool readBMI270() {
-  if (imu.getSensorData() != BMI2_OK) return false;
-  // 当前实装相对历史竖装方向前后反向：绕X(上下)轴旋转180°。
-  // 因此X保持，Y/Z同时翻转；这保证加速度角与俯仰角速度符号一致。
-  ax = imu.data.accelX;
-  ay = - imu.data.accelY;
-  az = - imu.data.accelZ;
-  gx = imu.data.gyroX;
-  gy = - imu.data.gyroY;
-  gz = - imu.data.gyroZ;
-  return true;
-}
-
-// ============================================================
-// BMI270初始化；beginI2C内部完成芯片识别、配置文件装载和传感器使能
-// ============================================================
-bool initBMI270() {
-  // 冷上电时传感器电源可能晚于MCU稳定。初始化阶段先使用100kHz，
-  // 完成配置文件装载后，setup()再切换到400kHz。
-  delay(1500);
-  BMIWire.begin();
-  BMIWire.setClock(100000);
-  delay(300);
-  for (int i = 0; i < 12; i++) {
-    BMIWire.beginTransmission(BMI270_ADDRESS);
-    uint8_t probeError = BMIWire.endTransmission();
-    if (probeError != 0) {
-      delay(500);
-      continue;
-    }
-    // 清除上一次未完成的配置装载状态，使每次重试从确定状态开始。
-    bmiWriteRegister(BMI270_REG_CMD, BMI270_SOFT_RESET_CMD);
-    delay(50);
-    int8_t result = imu.beginI2C(BMI270_ADDRESS, BMIWire);
-    if (result == BMI2_OK) {
-      delay(200);
-      if (imu.getSensorData() == BMI2_OK) return true;
-    }
-    BTSerial.print("BMI270 init retry ");
-    BTSerial.print(i + 1);
-    BTSerial.print(" err=");
-    BTSerial.println((int) result);
-    delay(500);
-  }
-  return false;
-}
-
-// ============================================================
-// 加速度Pitch
-// 竖装BMI270：X = 上下
-// Z = 前后；Y = 俯仰转轴
-// ============================================================
-float calculateAccelPitch() {
-  return atan2f(- az, - ax) * 180.0f / PI;
-
-}
-
-// ============================================================
-// IMU校准
-// 开机保持车体静止
-// ============================================================
-bool calibrateIMU() {
-  // 开机静止采样只用于估计陀螺仪零偏和初始绝对倾角。
-  // calculateAccelPitch() 直接表示重力相对 IMU 轴的倾角；
-  // 只减去固定安装偏置，不减去开机时车体姿态。
-  const float CAL_STATIC_GYRO_DPS = 4.0f;  // 静止判据：角速度小于此值(°/s)
-  const float CAL_GRAV_MAG_TOL = 0.25f;  // 静止判据：|模长-1g| 容差(g)
-  const int SAMPLE_TARGET = 400;  // 需累计的有效样本数
-  const uint32_t CAL_TIMEOUT_MS = 20000;  // 总等待上限(毫秒) 保护
-  delay(300);  // 上电稳定
-  float pitchSum = 0.0f, gyroYSum = 0.0f, gyroXSum = 0.0f;
-  int valid = 0;
-  uint32_t tStart = millis();
-  while (valid < SAMPLE_TARGET && (millis() - tStart) < CAL_TIMEOUT_MS) {
-    if (readBMI270()) {
-      float mag = sqrtf(ax * ax + ay * ay + az * az);
-      bool still = (fabsf(gy) < CAL_STATIC_GYRO_DPS) && (fabsf(mag - 1.0f) < CAL_GRAV_MAG_TOL);
-      if (still) {
-        pitchSum += calculateAccelPitch();
-        gyroYSum += gy;
-        gyroXSum += gx;
-        valid++;
-      }
-    }
-    delay(3);
-  }
-  if (valid < SAMPLE_TARGET / 2) {
-    return false;
-  }
-  pitchZero = PITCH_MOUNT_OFFSET_DEG;
-  gyroYZero = gyroYSum / (float) valid;  // 陀螺零偏
-  gyroXZero = gyroXSum / (float) valid;
-  const float initialPitch = pitchSum / (float) valid - pitchZero;
-  accPitch = initialPitch;
-  pitch = initialPitch;
-  kalmanAngle = initialPitch;
-  kalmanBias = 0.0f;
-  compAngle = initialPitch;
-  pitchPrev = initialPitch;
-  gyroIntegAngle = initialPitch;
-  P00 = 1.0f;
-  P01 = 0.0f;
-  P10 = 0.0f;
-  P11 = 1.0f;
-  return true;
-}
-
-// ============================================================
-// Kalman
-// ============================================================
-float updateKalman(float measuredAngle, float measuredRate, float dt) {
-  // --------------------------------------------------------
-  // 1. 状态预测
-  // --------------------------------------------------------
-  float rate = measuredRate - kalmanBias;
-  kalmanAngle += dt * rate;
-  // --------------------------------------------------------
-  // 2. 协方差预测
-  // --------------------------------------------------------
-  P00 += dt * (dt * P11 - P01 - P10 + Q_angle);
-  P01 -= dt * P11;
-  P10 -= dt * P11;
-  P11 += Q_bias * dt;
-  // --------------------------------------------------------
-  // 3. 测量创新
-  // --------------------------------------------------------
-  float innovation = measuredAngle - kalmanAngle;
-  // --------------------------------------------------------
-  // 动态测量噪声
-  //
-  // 车辆静止/低动态时 dynamicR ≈ 0.03
-  // 车辆加速或振动明显时 dynamicR 增大，
-  // 从而暂时减少加速度角对Kalman的修正。
-  // --------------------------------------------------------
-  float S = P00 + dynamicR;
-  // --------------------------------------------------------
-  // 4. Kalman增益
-  // --------------------------------------------------------
-  float K0 = P00 / S;
-  float K1 = P10 / S;
-  // --------------------------------------------------------
-  // 5. 状态修正
-  // --------------------------------------------------------
-  kalmanAngle += K0 * innovation;
-  kalmanBias += K1 * innovation;
-  // --------------------------------------------------------
-  // 6. 协方差修正
-  // --------------------------------------------------------
-  float oldP00 = P00;
-  float oldP01 = P01;
-  P00 -= K0 * oldP00;
-  P01 -= K0 * oldP01;
-  P10 -= K1 * oldP00;
-  P11 -= K1 * oldP01;
-  return kalmanAngle;
-
-}
-
-// ============================================================
-// 互补滤波(取代 Kalman)：
-//   angle = COMP_ALPHA*(angle + gyroRate*dt) + (1-COMP_ALPHA)*accPitch
-//   响应快、参数少，不会像 Kalman 高Q/高R 那样“太信静止/滤过头”。
-//   COMP_ALPHA 越接近1 越信陀螺积分(平滑)，越接近0 越信加速度(跟得快)。
-// ============================================================
-float updateComplementary(float measuredAngle, float measuredRate, float dt) {
-  compAngle = COMP_ALPHA * (compAngle + measuredRate * dt) + (1.0f - COMP_ALPHA) * measuredAngle;
-  return compAngle;
-
-}
-
-// ============================================================
-// 姿态更新
-// ============================================================
-void updateAttitude() {
-  // --------------------------------------------------------
-  // 1. 原始加速度角
-  // --------------------------------------------------------
-  accPitch = calculateAccelPitch() - pitchZero;
-  // --------------------------------------------------------
-  // 2. Pitch轴陀螺仪角速度
-  // --------------------------------------------------------
-  gyroPitchRate = GY_DIRECTION * (gy - gyroYZero);
-  // --------------------------------------------------------
-  // 3. 计算三轴加速度模长
-  //
-  // SparkFun BMI270库已将加速度换算为g。
-  // 静止时理论上接近1g。
-  // --------------------------------------------------------
-  accelMagnitude = sqrtf(ax * ax + ay * ay + az * az);
-  accelMagnitudeError = fabsf(accelMagnitude - 1.0f);
-  // --------------------------------------------------------
-  // 4. 根据 |a|-1g 动态调整R
-  //
-  // 越偏离1g，说明线性加速度/振动越明显，
-  // 这时accPitch可信度降低。
-  // --------------------------------------------------------
-  // 连续插值：加速度模长误差 0 -> ACC_ERR_HIGH 平滑映射 R
-  // 静止/低速：R小(0.02)，acc权重高，抑制陀螺零偏积分漂移
-  // 高速/振动：R大(1.20)，acc权重低，防止线性加速度污染角度
-  // 双判据：(1) 加速度模长误差（振动/线性加速度）(2) 方向分歧 innovation（毛刺）
-  // 真实运动：accPitch 与 gyroInt 同步变化 → innovRatio 小 → 不影响
-  // accPitch 单拍毛刺：gyroInt 不动 → innovRatio 大 → dynamicR 拉满 → 只信陀螺
-  float errRatio = accelMagnitudeError / ACC_ERR_HIGH;
-  if (errRatio > 1.0f) {
-    errRatio = 1.0f;
-  }
-  float innovRatio = fabsf(accPitch - gyroIntegAngle) / ACC_INNOV_HIGH;
-  if (innovRatio > 1.0f) {
-    innovRatio = 1.0f;
-  }
-  float combinedRatio = (errRatio > innovRatio) ? errRatio: innovRatio;
-  dynamicR = R_LOW_DYNAMIC + (R_HIGH_DYNAMIC - R_LOW_DYNAMIC) * combinedRatio;
-  // --------------------------------------------------------
-  // 5. Kalman融合
-  // --------------------------------------------------------
-  pitch = updateKalman(accPitch, gyroPitchRate, CONTROL_DT);
-  // ---- Pitch 毛刺抑制：单步突变>±5° 判为IMU/卡尔曼毛刺，用上一有效值替代 ----
-  // 用步长差而非绝对限幅：车正常还要走大角度(±10°+)，绝对限幅会砍正常反馈；
-  // 而 400Hz 下单步>5° 是倒摆+电机也到不了的物理上限，只会掐真毛刺，不动正常响应。
-  {
-    float dPitch = pitch - pitchPrev;
-    if (dPitch > PITCH_GLITCH_DEG) pitch = pitchPrev;
-    else if (dPitch < - PITCH_GLITCH_DEG) pitch = pitchPrev;
-    else pitchPrev = pitch;
-  }
-  // 真实KF输入角 = gyroPitchRate 去掉 kalmanBias 后在 400Hz 积分。
-  // 只发这个积分角，电脑端不再做 5Hz 快照积分，根治面板紫线漂移。
-  gyroIntegAngle += (gyroPitchRate - kalmanBias) * CONTROL_DT;
-  // --------------------------------------------------------
-  // 6. 根据Pitch去除Z轴重力分量，得到前向线加速度趋势
-  //
-  // 静止时：
-  // az ≈ -sin(pitch)
-  //
-  // 因此：
-  // az + sin(pitch) ≈ 0
-  //
-  // 再乘方向参数统一为“向前加速为正”。
-  // --------------------------------------------------------
-  float pitchRad = pitch * DEG_TO_RAD;
-  imuForwardAccelG = IMU_FORWARD_ACCEL_DIRECTION * (az + sinf(pitchRad));
-  // 尖峰限幅
-  if (imuForwardAccelG > IMU_ACCEL_CLAMP_G) {
-    imuForwardAccelG = IMU_ACCEL_CLAMP_G;
-  }
-  if (imuForwardAccelG < - IMU_ACCEL_CLAMP_G) {
-    imuForwardAccelG = - IMU_ACCEL_CLAMP_G;
-  }
-  // 轻度低通
-  imuForwardAccelFilteredG = (1.0f - IMU_ACCEL_LPF_ALPHA) * imuForwardAccelFilteredG + IMU_ACCEL_LPF_ALPHA * imuForwardAccelG;
-  // 根据加速度模长偏离1g的程度降低IMU预测可信度
-  if (accelMagnitudeError < ACC_ERR_LOW) {
-    imuSpeedPredictionTrust = 1.0f;
-  } else if (accelMagnitudeError < ACC_ERR_HIGH) {
-    imuSpeedPredictionTrust = 0.45f;
-  } else {
-    imuSpeedPredictionTrust = 0.12f;
-  }
-  // --------------------------------------------------------
-  // 7. 转向角速度
-  // --------------------------------------------------------
-  gyroTurnRate = TURN_GYRO_DIRECTION * (gx - gyroXZero);
-
-}
-
-// ============================================================
-// 多源速度Kalman
-//
-// 400Hz：用IMU前向线加速度做预测
-// 20Hz ：用编码器速度做测量修正
-//
-// 电机命令不直接当“真实速度”，只用来动态调整过程噪声Q：
-// 控制命令大 -> 系统更可能快速改变速度 -> Kalman更允许状态变化。
-// ============================================================
-void predictVehicleSpeedKalman() {
-  // --------------------------------------------------------
-  // 1. IMU只负责“短期趋势预测”
-  //
-  // 编码器负责长期速度绝对值；
-  // IMU不允许长期主导vehicleSpeed。
-  // --------------------------------------------------------
-  float accelForSpeed = imuForwardAccelFilteredG;
-  // 小加速度死区：
-  // 防止0.01~0.02g级别的零偏不断积分成假速度。
-  if (fabsf(accelForSpeed) < IMU_SPEED_ACCEL_DEADBAND_G) {
-    accelForSpeed = 0.0f;
-  }
-  float imuDeltaSpeed = accelForSpeed * imuSpeedPredictionTrust * IMU_ACCEL_TO_SPEED_GAIN * CONTROL_DT;
-  // 单周期预测限幅
-  if (imuDeltaSpeed > MAX_IMU_SPEED_DELTA_PER_CYCLE) {
-    imuDeltaSpeed = MAX_IMU_SPEED_DELTA_PER_CYCLE;
-  }
-  if (imuDeltaSpeed < - MAX_IMU_SPEED_DELTA_PER_CYCLE) {
-    imuDeltaSpeed = - MAX_IMU_SPEED_DELTA_PER_CYCLE;
-  }
-  vehicleSpeed += imuDeltaSpeed;
-  // --------------------------------------------------------
-  // 2. 动态过程噪声Q
-  //
-  // 电机命令越大，系统越可能快速改变速度，
-  // 因此允许Kalman状态更快变化。
-  //
-  // 注意：balanceOutput只调Q，不直接当作真实速度。
-  // --------------------------------------------------------
-  speedKalmanQ = SPEED_KALMAN_Q_BASE + SPEED_KALMAN_Q_MOTOR_GAIN * fabsf(balanceOutput);
-  speedKalmanP += speedKalmanQ * CONTROL_DT;
-
-}
-
-void correctVehicleSpeedKalman(float encoderMeasurement) {
-  // --------------------------------------------------------
-  // 编码器作为“速度绝对值主测量”
-  //
-  // 低速时虽然存在0/1 count量化，
-  // 但R不再设得过大，避免Kalman长期跟着IMU预测跑偏。
-  // --------------------------------------------------------
-  if (fabsf(encoderMeasurement) < 2.0f) {
-    speedKalmanR = SPEED_KALMAN_R_LOW_SPEED;
-  } else {
-    speedKalmanR = SPEED_KALMAN_R_NORMAL;
-  }
-  float innovation = encoderMeasurement - vehicleSpeed;
-  float innovationCovariance = speedKalmanP + speedKalmanR;
-  float K = speedKalmanP / innovationCovariance;
-  vehicleSpeed += K * innovation;
-  speedKalmanP = (1.0f - K) * speedKalmanP;
-  // 防止P数值过小导致后续测量修正越来越迟钝
-  if (speedKalmanP < 0.02f) {
-    speedKalmanP = 0.02f;
-  }
-
-}
-
-// ============================================================
 // 漂移拉回外环
 // 成熟步进平衡车串级外环：100Hz速度PI -> 小目标倾角。
 // 编码器增量换算为既有count/50ms量纲，保持参数和遥测单位不变。
 // ============================================================
 void updateOuterLoop() {
-  int32_t count1;
-  int32_t count2;
-  noInterrupts();
-  count1 = encoder1Count;
-  count2 = encoder2Count;
-  interrupts();
-  // --------------------------------------------------------
-  // 1. 10ms编码器增量，乘5换算为count/50ms
-  // --------------------------------------------------------
-  int32_t delta1 = count1 - lastEncoder1Count;
-  int32_t delta2 = count2 - lastEncoder2Count;
-  lastEncoder1Count = count1;
-  lastEncoder2Count = count2;
-  encoderSpeed1 = (1.0f - ENCODER_SPEED_LPF_ALPHA) * encoderSpeed1 + ENCODER_SPEED_LPF_ALPHA * ((float) delta1 * 5.0f);
-  encoderSpeed2 = (1.0f - ENCODER_SPEED_LPF_ALPHA) * encoderSpeed2 + ENCODER_SPEED_LPF_ALPHA * ((float) delta2 * 5.0f);
-  // --------------------------------------------------------
-  // 1b. 编码器信任门
-  //
-  // 整段剔除不可信的一路，而不是把下面的 -0.5f 硬改成 -1.0f。
-  // 后者等价于“永远假设 enc2 = 0”，会在这路恢复正常时把车速
-  // 读成真实值的 2 倍，比原来的固定偏低更危险。
-  // --------------------------------------------------------
-  if (delta1 >= ENCODER_TRUST_MIN_COUNTS || delta1 <= - ENCODER_TRUST_MIN_COUNTS) encoder1MotionTicks++;
-  if (delta2 >= ENCODER_TRUST_MIN_COUNTS || delta2 <= - ENCODER_TRUST_MIN_COUNTS) encoder2MotionTicks++;
-  encoderTrustWindowTicks++;
-  if (encoderTrustWindowTicks >= ENCODER_TRUST_WINDOW_TICKS) {
-    const bool encoder1Active = (encoder1MotionTicks >= ENCODER_TRUST_ACTIVE_TICKS);
-    const bool encoder2Active = (encoder2MotionTicks >= ENCODER_TRUST_ACTIVE_TICKS);
-    // 车本身静止时两路都不活跃，不能据此改判，保持上一次结论。
-    if (encoder1Active || encoder2Active) {
-      encoder1Trusted = encoder1Active;
-      encoder2Trusted = encoder2Active;
-    }
-    encoder1MotionTicks = 0;
-    encoder2MotionTicks = 0;
-    encoderTrustWindowTicks = 0;
-  }
-  rawSpeedEncoderMode = (encoder1Trusted && encoder2Trusted) ? 0: (encoder1Trusted ? 1: 2);
-  // --------------------------------------------------------
-  // 2. 编码器车辆速度
-  //
-  // 当前沿用此前实测约定：
-  // 向前 = 正
-  // 向后 = 负
-  // --------------------------------------------------------
-  if (encoder1Trusted && encoder2Trusted) rawVehicleSpeed = - 0.5f * (encoderSpeed1 + encoderSpeed2);
-  else if (encoder1Trusted) rawVehicleSpeed = - encoderSpeed1;
-  else rawVehicleSpeed = - encoderSpeed2;
-  // --------------------------------------------------------
-  // 3. 用编码器修正速度Kalman
-  //
-  // 此时vehicleSpeed已经由：
-  // 400Hz IMU预测 + 20Hz编码器修正
-  // 得到融合速度。
-  // --------------------------------------------------------
-  correctVehicleSpeedKalman(rawVehicleSpeed);
   // --------------------------------------------------------
   // 4. 标准串级位置P外环：位置误差 -> 受限目标速度
   // --------------------------------------------------------
@@ -1490,7 +919,7 @@ void setup() {
   // --------------------------------------------------------
   // 22 项参数：先抄编译默认值，能读到 flash 记录就覆盖（2026-11-10）
   paramStorageBoot();
-  while (!initBMI270()) {
+  while (!control::initBMI270()) {
     control::stopBothMotors();
     clearControlOutputDiagnostics();
     BTSerial.println("BOOT RETRY: BMI270 init failed");
@@ -1501,7 +930,7 @@ void setup() {
   // --------------------------------------------------------
   // 配置400Hz
   // --------------------------------------------------------
-  while (!configureBMI270_400Hz()) {
+  while (!control::configureBMI270_400Hz()) {
     control::stopBothMotors();
     clearControlOutputDiagnostics();
     BTSerial.println("BOOT RETRY: BMI270 400Hz config failed");
@@ -1510,7 +939,7 @@ void setup() {
   // --------------------------------------------------------
   // 校准
   // --------------------------------------------------------
-  while (!calibrateIMU()) {
+  while (!control::calibrateIMU()) {
     control::stopBothMotors();
     clearControlOutputDiagnostics();
     BTSerial.println("BOOT RETRY: IMU calibration failed; keep car still");
@@ -2255,7 +1684,7 @@ void loop() {
   // --------------------------------------------------------
   // 读取BMI270
   // --------------------------------------------------------
-  if (!readBMI270()) {
+  if (!control::readBMI270()) {
     imuFailCount++;
     if (imuFailCount < IMU_FAIL_CONFIRM_COUNT) {
       // 保持上一有效STEP输出
@@ -2277,16 +1706,10 @@ void loop() {
   }
   imuFailCount = 0;
   // --------------------------------------------------------
-  // Kalman姿态
+  // 控制段首：Kalman姿态 + 多源速度Kalman预测 400Hz
+  // （IMU负责快速感知“开始加速”的趋势；编码器会在外环20Hz时做绝对速度修正）
   // --------------------------------------------------------
-  updateAttitude();
-  // --------------------------------------------------------
-  // 多源速度Kalman预测 400Hz
-  //
-  // IMU负责快速感知“开始加速”的趋势；
-  // 编码器会在外环20Hz时进行绝对速度修正。
-  // --------------------------------------------------------
-  predictVehicleSpeedKalman();
+  control::tick400();
   // --------------------------------------------------------
   // 蓝牙遥测20Hz
   // 放在倒地保护之前，这样即使触发倒地保护，
@@ -2362,6 +1785,7 @@ void loop() {
   outerLoopDivider++;
   if (outerLoopDivider >= 4) {
     outerLoopDivider = 0;
+    control::tick100();      // 编码器速度估计 + Kalman 修正
     updateOuterLoop();
   }
   // --------------------------------------------------------
