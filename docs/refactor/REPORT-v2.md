@@ -260,3 +260,29 @@ TOKEN-EQUIVALENT: YES
 ```powershell
 & "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -d "D:\AI项目总库\02_机器人与机械工程\PlatformIO项目\pinghengche\balance-car-showcase\software\firmware"
 ```
+
+---
+
+## Lead 独立验收（2026-11-20，不采信执行者自述，逐项自测）
+
+| 检查项 | 方法 | 结果 |
+|---|---|---|
+| 构建 | 自己跑 `pio run` | SUCCESS，**Flash 89440B / RAM 8356B**（基线 89136/8388） |
+| 依赖方向 | `control/**` grep `include "(panel|remote)/`、`remote/**` grep `include "panel/` | **0 / 0** |
+| 死代码 | 全树 grep `updateComplementary|speedDirect|speedPredicted` | **0 命中** |
+| 帧格式串 | 从 99eadae 与当前树各抽 D/G printf 格式串比对 | **2 条 = 2 条，逐字符相同** |
+| 参数表 | 正则抽 `paramSlots` 键序 | **22 项顺序完全一致**（`P D O Z L S R B H K I N W J E X Y M F G T U`） |
+| 命令表 | `case 'x':` 集合差 | 52 → 48，**仅删 A/a/Q/q**（已批准） |
+| 命名初值 | 规范化空白后按名字比对 341 个重叠定义 | 真差异 4 个，全部是改名/入参化：`followPosition`(manualMotionIsActive→isActive)、`motor1/2Command`(turnOutput→turnOffsetHz)、`pitchOffset`(motionLean.applied→leanOffset)；**无默认值被改动** |
+| 被删常量复核 | 对 99eadae 逐个查命中数 | 均为 1（仅声明）；`COMP_ALPHA` 5 次但全在已死的 updateComplementary 内 → 连带死代码，合规 |
+| loop 顺序 | 新 `main.cpp` 全文 vs 原 loop 逐段对照 | 节拍闸门→掉拍→IMU→tick400→遥测分频→倒地→远控tick→位置保持→÷4(编码器→远控100Hz→外环)→权限→直立→转向→合成→窗口→flush，**逐段对齐** |
+| 外环内部顺序 | 读 `control/cascade.cpp` + `remote/remote_control.cpp` | 编码器修正→点动→运动驱动(接管则 return true)→运动释放→位置P外环→jog倾角→速度参考→SP→限幅→误差→PI→N限幅→斜率，**与原 updateOuterLoop 一致** |
+
+### Lead 追加清理（执行者留下的唯一待决项）
+`motor1/2ZeroHoldCount`：99eadae 中只写不读（零保持功能早已移除）。本次已删除：
+`control/motor.cpp` 定义 2 行、`core/state.h` extern 2 行、`main.cpp` 赋值 4 行。
+复测：残留 0 命中，构建 SUCCESS，**Flash 89472→89440B，RAM 8360→8356B**。
+
+### 结论
+拆分**通过**：行为等价（算式/阈值/时序/协议/参数表均未变），依赖单向，`main.cpp` 344→340 行，
+全树 36 文件 4552 行（非空 4192）。**未烧录**，是否上机由用户决定。

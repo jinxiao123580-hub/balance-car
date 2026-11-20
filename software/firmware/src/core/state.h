@@ -53,8 +53,6 @@ extern float speedIntegral;
 extern float speedAngleCorrection;
 extern float speedErrorPrev;
 extern float speedErrorDotFilt;
-extern uint8_t motor1ZeroHoldCount;
-extern uint8_t motor2ZeroHoldCount;
 extern uint8_t imuFailCount;
 extern uint8_t fallConfirmCount;
 extern float OUTER_FULL_ANGLE_DEG;

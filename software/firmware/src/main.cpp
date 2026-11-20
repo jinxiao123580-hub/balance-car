@@ -141,8 +141,6 @@ void setup() {
   telemetryDivider = 0;
   imuFailCount = 0;
   fallConfirmCount = 0;
-  motor1ZeroHoldCount = 0;
-  motor2ZeroHoldCount = 0;
   outerLoopAuthority = 1.0f;
   // 网页会忽略这一行表头
   BTSerial.println("time_ms,fused_speed,speed_direct_hz");
@@ -268,8 +266,6 @@ void loop() {
     speedErrorDotFilt = 0.0f;
     finalBalanceOutput = 0.0f;
     outerLoopAuthority = 0.0f;
-    motor1ZeroHoldCount = 0;
-    motor2ZeroHoldCount = 0;
     targetForwardSpeed = 0.0f;
     noInterrupts();
     int32_t resetCount1 = encoder1Count;

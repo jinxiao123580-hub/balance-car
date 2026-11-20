@@ -161,10 +161,6 @@ int encoder2Direction = - 1;  // V10 实机确认值：编码器2方向反（8/2
 volatile int32_t encoder1Count = 0;
 volatile int32_t encoder2Count = 0;
 
-// 直立输出为 0 时的零保持计数（原 main.cpp 全局）
-uint8_t motor1ZeroHoldCount = 0;
-uint8_t motor2ZeroHoldCount = 0;
-
 namespace control {
 
 // StepOutput 定义在 control/motor.h；这里给出两个实例
