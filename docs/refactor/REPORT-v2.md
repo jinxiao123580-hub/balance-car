@@ -154,7 +154,7 @@ software/firmware/src/
 │  ├─ state.h                      160   （151 条全局 extern 声明，唯一跨模块状态通道）
 │  └─ util.h                        15   （clampf / isFiniteValue）
 ├─ control/
-│  ├─ motor.h / .cpp                51 / 494  （STEP 频率/零保持/换向软斜坡/编码器 ISR/TMC UART 初始化）
+│  ├─ motor.h / .cpp               196 / 355  （STEP 频率/零保持/换向软斜坡/编码器 ISR/TMC2209 UART 初始化）
 │  ├─ imu.h / .cpp                  25 / 175  （BMI270 读写/400Hz 配置/开机校准）
 │  ├─ attitude.h / .cpp             23 / 189  （Kalman 姿态 → pitch/pitchRate）
 │  ├─ speed_est.h / .cpp            27 / 185  （编码器累计 + 速度 Kalman 预测(400Hz)/修正(100Hz)）
