@@ -468,7 +468,11 @@ int encoder2Direction = -1;   // V10 实机确认值：编码器2方向反（8/2
 
   
 
-float balanceAngleOffset = 2.0f; // 用户面板参数 O：上电默认平衡目标角（2026-11-12 实测定为 2.0°，O=4 会持续单侧倾倒）
+float balanceAngleOffset = 2.99f; // 用户面板参数 O：上电默认平衡目标角。
+// 2026-11-19 实测定为 2.99（烧录重启后二分：4.24 会漂 +28.5mm/s，2.99 时 −0.11mm/s）。
+// 注意 O 是随装配/上电变化的量：每次上电先 `?` 看 O=，再用 ble_find_o.py 重测；
+// 闪存里有 SAVED 记录时，本默认值只在擦除后首次启动才生效。
+// 历史：2026-11-12 曾因"O=4 持续单侧倾倒"降到 2.0，11-19 找到真因是 N=2.0（见 MAX_SPEED_ANGLE）。
 
   
 
@@ -579,7 +583,10 @@ float SPEED_ERROR_DEADBAND = 2.0f;   // 速度误差死区(速度环积分门控
 
 // 当前targetForwardSpeed通常为0，这个参数主要为后续遥控前进保留。
 
-const float MAX_TARGET_FORWARD_SPEED = 8.0f;
+// 2026-11-19：8 太小——车被锁在"几 mm/s"的静摩擦主导区间，任何环都稳不住。
+// 放到 30，允许进入正常巡航速度（SP 命令仍受此钳制）。
+// 2026-11-20: runtime variable + `MS <v>` command (RAM-only), no reflash for range tuning.
+float MAX_TARGET_FORWARD_SPEED = 30.0f;
 
   
   
@@ -605,10 +612,17 @@ float speedPredictHorizon = 0.0f;        // STEP速度预测时间（蓝牙A）�
 const float SPEED_ACCEL_FILTER_ALPHA = 0.80f; // 20Hz速度差分低通：越大越平滑
 
 // 经典速度PI外环（改目标角）：speedAngleCorrection 叠加到目标平衡角，让车倾斜以移动。
-float speedKp = -0.02f;          // 速度PI到目标角的比例增益；实车已确认该号为正确方向
+float speedKp = -0.10f;          // 速度PI到目标角的比例增益；实车已确认该号为正确方向。
+// 2026-11-19：−0.02 太小（SP=8 只产生 0.16°，低于破粘门槛 0.5~0.7°），
+// 实测 −0.10 在 SP±8 下给出 +43.8/−43.0mm 的对称位移（2% 差）。
+// 上限：≥0.20 会猛冲撞翻（SV 0.20/0.30 实测 −47.9/−11.9mm/s）。
 float speedKi = 0.0f;            // 先用纯P验证速度方向；启用后采用条件积分/抗饱和
 float speedKd = 0.0f;
-float MAX_SPEED_ANGLE = 2.0f;
+float MAX_SPEED_ANGLE = 0.8f;   // 速度修正角上限（参数 N）。
+// 2026-11-19 实测：这是稳定边界，不是"越大越有力"。
+// N=2.0 时速度误差一大，外环就反向往死里拽 2°，直接翻车；
+// 收到 0.8° 后：起步 0.96° 被截到 0.8°（仍破粘），反向最大也只 0.8°，拽不翻。
+// 证据：docs/validation/analysis/20261119-MOTION-CONTROL.md（15:32/15:36）
 // 20Hz外环每次更新时，目标倾角修正最多变化的角度。
 // 用来防止目标角在 +/-N 之间瞬间跳变。
 const float SPEED_ANGLE_SLEW_DEG_PER_UPDATE = 0.10f; // 100Hz外环，等效最大10deg/s
@@ -4816,11 +4830,12 @@ static bool handleTunableCommand(const char* cmd, uint8_t len, QueuedBtReply& re
     const bool isErrorGain    = (a == 'E' && b == 'G');
     const bool isSpeedCmd     = (a == 'S' && b == 'P');
     const bool isSpeedKp      = (a == 'S' && b == 'V');   // 2026-11-19：速度环 P 增益在线可调
-    if (!isErrorGain && !isSpeedCmd && !isSpeedKp) return false;
+    const bool isMaxSpeed     = (a == 'M' && b == 'S');   // 2026-11-20: speed range cap (RAM-only)
+    if (!isErrorGain && !isSpeedCmd && !isSpeedKp && !isMaxSpeed) return false;
 
     uint8_t vstart = lead + 2;
     while (vstart < len && (cmd[vstart] == ' ' || cmd[vstart] == '\t')) ++vstart;
-    if (vstart >= len) { reply.println("ERR:SP/SV/EG need a number"); return true; }
+    if (vstart >= len) { reply.println("ERR:SP/SV/EG/MS need a number"); return true; }
     char vbuf[16];
     uint8_t vlen = 0;
     for (uint8_t i = vstart; i < len && vlen + 1u < sizeof(vbuf); ++i) {
@@ -4833,13 +4848,26 @@ static bool handleTunableCommand(const char* cmd, uint8_t len, QueuedBtReply& re
     const float value = strtof(vbuf, &end);
     // 用区间判断挡 NaN/Inf，而不是 isfinite()：后者在主机回归里没有非限定声明
     if (end == vbuf || *end != '\0' || !(value > -1.0e6f && value < 1.0e6f)) {
-        reply.println("ERR:SP/SV/EG need a number");
+        reply.println("ERR:SP/SV/EG/MS need a number");
         return true;
     }
 
     if (isSpeedCmd) {
         speedCmd = ManualTurnControl::clamp(value, -MAX_TARGET_FORWARD_SPEED, MAX_TARGET_FORWARD_SPEED);
         reply.print("SP ok ");
+        reply.println(speedCmd, 3);
+        return true;
+    }
+    if (isMaxSpeed) {
+        // range cap: below 0.5 means standstill, above 60 is far beyond the steppers
+        MAX_TARGET_FORWARD_SPEED = ManualTurnControl::clamp(value, 0.5f, 60.0f);
+        // shrinking the range may leave speedCmd out of bounds: pull it back at once
+        speedCmd = ManualTurnControl::clamp(speedCmd,
+                                            -MAX_TARGET_FORWARD_SPEED,
+                                            MAX_TARGET_FORWARD_SPEED);
+        reply.print("MS ok ");
+        reply.print(MAX_TARGET_FORWARD_SPEED, 3);
+        reply.print(" SP=");
         reply.println(speedCmd, 3);
         return true;
     }
@@ -4969,6 +4997,7 @@ void handleBtCommand(char* cmd, uint8_t len)
         reply.print(" SP="); reply.print(speedCmd, 3);
         // SV：速度环 P 增益（在线可调，用于定极性与标定倾角/速度）
         reply.print(" SV="); reply.print(speedKp, 4);
+        reply.print(" MS="); reply.print(MAX_TARGET_FORWARD_SPEED, 3);
         reply.println();
         reply.print("JOGCFG ");reply.print(positionLean.kp,4);reply.print(' ');reply.println(positionLean.limit,3);
         return;

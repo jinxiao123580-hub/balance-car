@@ -1,0 +1,26 @@
+
+===== SP=+8 =====
+  frames=13  pos -1974.3 -> -2014.2 mm (net -39.9)
+  targetAngle +2.87 .. +4.17 deg   output -815 .. 302
+  pitch +2.38 .. +4.30 deg
+  ABORTED by TRAVEL guard
+Traceback (most recent call last):
+  File "D:\Deepseek Harness\.dsh-tmp\probe_sign.py", line 87, in <module>
+    sys.exit(asyncio.run(main()))
+             ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\10905\miniconda3\envs\kalman_ble\Lib\asyncio\runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\10905\miniconda3\envs\kalman_ble\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\10905\miniconda3\envs\kalman_ble\Lib\asyncio\base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "D:\Deepseek Harness\.dsh-tmp\probe_sign.py", line 80, in main
+    print("  sample:", ["%+.1fmm/%+.2fdeg/tgt%+.2f/out%+d" % r for r in seg[::max(1, len(seg) // 6)]][:6])
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Deepseek Harness\.dsh-tmp\probe_sign.py", line 80, in <listcomp>
+    print("  sample:", ["%+.1fmm/%+.2fdeg/tgt%+.2f/out%+d" % r for r in seg[::max(1, len(seg) // 6)]][:6])
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~
+TypeError: not all arguments converted during string formatting

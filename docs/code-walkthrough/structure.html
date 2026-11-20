@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>平衡车固件 · 代码结构图</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#161c23; --line:#2a3440;
+    --txt:#e6edf3; --dim:#9aa7b4; --accent:#4cc2ff;
+    --l0:#3b82f6; --l1:#a855f7; --l2:#22c55e; --l3:#eab308; --l4:#f97316; --l5:#ef4444;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px 22px 60px;background:var(--bg);color:var(--txt);
+       font:14px/1.65 "Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  h1{font-size:22px;margin:0 0 4px}
+  h2{font-size:16px;margin:38px 0 12px;padding-left:9px;border-left:3px solid var(--accent)}
+  .sub{color:var(--dim);font-size:12.5px;margin-bottom:22px}
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 26px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 13px;font-size:12.5px}
+  .stat b{color:var(--accent);font-size:15px}
+
+  .band{display:grid;grid-template-columns:104px 1fr;gap:12px;margin-bottom:9px;align-items:stretch}
+  .tag{border-radius:8px;display:flex;flex-direction:column;justify-content:center;
+       align-items:center;font-weight:600;font-size:12.5px;color:#08121c;text-align:center;padding:6px 4px;line-height:1.3}
+  .tag small{font-weight:400;opacity:.75;font-size:10.5px;display:block;margin-top:2px}
+  .row{display:flex;gap:9px;flex-wrap:wrap;align-content:flex-start}
+  .box{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 11px;
+       font-size:12.5px;min-width:0}
+  .box b{font-size:13px;display:block;margin-bottom:1px}
+  .box small{color:var(--dim);font-size:11px;display:block}
+  .box .fn{color:var(--accent);font-family:ui-monospace,Consolas,monospace;font-size:11.5px}
+  .arrowdown{text-align:center;color:var(--dim);font-size:13px;margin:-3px 0 3px;letter-spacing:2px}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px;background:var(--panel);
+        border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{background:#1d2732;font-weight:600;color:#cfe3f5}
+  tr:last-child td{border-bottom:none}
+  code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:#8fd3ff;
+       background:#0d141b;padding:1px 5px;border-radius:4px}
+
+  .path{display:flex;align-items:center;gap:0;flex-wrap:wrap;margin-bottom:14px}
+  .node{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:6px 10px;
+        font-size:12px;white-space:nowrap}
+  .node em{display:block;color:var(--dim);font-style:normal;font-size:10.5px}
+  .sep{color:var(--accent);padding:0 7px;font-size:15px}
+  .tick{color:#7dd3fc;font-weight:600}
+  .warn{background:#2a1c1c;border:1px solid #6b2c2c;border-radius:8px;padding:10px 14px;
+        font-size:12.5px;color:#ffd9d9}
+  .warn b{color:#ff9d9d}
+  footer{margin-top:44px;color:var(--dim);font-size:11.5px;border-top:1px solid var(--line);padding-top:12px}
+</style>
+</head>
+<body>
+
+<h1>平衡车固件 · 代码结构图</h1>
+<div class="sub">
+  <code>software/firmware/</code> · STM32F407ZG · PlatformIO / Arduino · 生成于 2026-11-20
+</div>
+
+<div class="stats">
+  <div class="stat">物理行 <b>5838</b></div>
+  <div class="stat">非空 <b>3283</b></div>
+  <div class="stat">代码 ≈<b>2524</b></div>
+  <div class="stat">注释 <b>759</b></div>
+  <div class="stat">头文件 <b>6</b></div>
+  <div class="stat">主要函数 <b>60</b></div>
+  <div class="stat">参数表 <b>22</b></div>
+</div>
+
+<div class="warn">
+  <b>读代码前先知道：</b> <code>main.cpp</code> 有 387 处连续空行（最长 7 行），很多语句被拆成
+  <code>if (</code> / 空行 / 条件 / 空行 / <code>)</code>。行号只能当锚点，<b>按逻辑块读</b>。
+</div>
+
+<h2>1 · 分层结构</h2>
+
+<div class="band">
+  <div class="tag" style="background:var(--l0)">L0<small>调度</small></div>
+  <div class="row">
+    <div class="box"><b>loop() · 400Hz</b><small class="fn">L5163–5825</small><small>主节拍：2.5ms 一拍</small></div>
+    <div class="box"><b>setup()</b><small class="fn">L4336–4672</small><small>一次性自检 / 参数读回</small></div>
+  </div>
+</div>
+<div class="arrowdown">▼ 每拍调用</div>
+
+<div class="band">
+  <div class="tag" style="background:var(--l1)">L1<small>接口 / 契约</small></div>
+  <div class="row">
+    <div class="box"><b>BLE 命令解析</b><small class="fn">pollBtCommand L4891 → handleBtCommand L4909</small><small>单字母 22 项 · PAR · ? · ! · SAVE/LOAD/DEF · ^</small></div>
+    <div class="box"><b>两字母运行参数</b><small class="fn">handleTunableCommand L4822</small><small>EG / SP / SV / MS（RAM-only）</small></div>
+    <div class="box"><b>遥测发送</b><small class="fn">sendTelemetry L4225 (D,1Hz) · sendFastTelemetry L4320 (G,4Hz)</small><small>9600 波特 · 非阻塞缓冲</small></div>
+    <div class="box"><b>参数持久化</b><small class="fn">paramStorageBoot L4764 · param_store.h · param_flash_f4.h</small><small>22 项 / 双扇区 / FORMAT_VERSION=3</small></div>
+  </div>
+</div>
+<div class="arrowdown">▼ 提供设定值 / 上报状态</div>
+
+<div class="band">
+  <div class="tag" style="background:var(--l2)">L2<small>控制</small></div>
+  <div class="row">
+    <div class="box"><b>外环 100Hz</b><small class="fn">updateOuterLoop L3337</small><small>编码器速度修正 → 运动驱动 → 速度 PI → 目标角</small></div>
+    <div class="box"><b>外环权限 400Hz</b><small class="fn">updateOuterLoopAuthority L3828</small><small>大角度时平滑退出，直立优先</small></div>
+    <div class="box"><b>直立环 400Hz</b><small class="fn">updateBalanceLoop L4029</small><small>PD → finalBalanceOutput</small></div>
+    <div class="box"><b>转向环 400Hz</b><small class="fn">updateTurnLoop L4199</small><small>→ turnOutput</small></div>
+    <div class="box"><b>位置环 400Hz调用</b><small class="fn">updatePositionHold L3972</small><small>X=0 时禁用</small></div>
+  </div>
+</div>
+<div class="arrowdown">▼ 需要姿态与速度</div>
+
+<div class="band">
+  <div class="tag" style="background:var(--l3)">L3<small>估计</small></div>
+  <div class="row">
+    <div class="box"><b>姿态</b><small class="fn">updateAttitude L2364 → updateKalman L2035 / updateComplementary L2321</small><small>→ pitch · pitchRate</small></div>
+    <div class="box"><b>速度预测 400Hz</b><small class="fn">predictVehicleSpeedKalman L3027</small><small>IMU 前向加速度驱动</small></div>
+    <div class="box"><b>速度修正 100Hz</b><small class="fn">correctVehicleSpeedKalman L3193</small><small>编码器绝对速度</small></div>
+  </div>
+</div>
+<div class="arrowdown">▼ 读写硬件</div>
+
+<div class="band">
+  <div class="tag" style="background:var(--l4)">L4<small>驱动 / 中断</small></div>
+  <div class="row">
+    <div class="box"><b>步进输出</b><small class="fn">commandStepOutput L2894 · setMotor1/2 L2983/2999</small><small>STEP 频率 + 反向软斜坡 + 零保持</small></div>
+    <div class="box"><b>STEP / 编码器中断</b><small class="fn">stepEdge L2845 · encoder1/2ISR L1603/1636</small><small>脉冲计数 · 四倍频</small></div>
+    <div class="box"><b>IMU 驱动</b><small class="fn">initBMI270 L1881 · configureBMI270_400Hz L1821 · readBMI270 L1854 · calibrateIMU L1974</small></div>
+    <div class="box"><b>TMC 配置</b><small class="fn">initTmcDrivers L337 · initTmcDriversWriteOnly L386</small><small>三种编译模式</small></div>
+  </div>
+</div>
+<div class="arrowdown">▼</div>
+
+<div class="band">
+  <div class="tag" style="background:var(--l5)">L5<small>硬件</small></div>
+  <div class="row">
+    <div class="box"><b>BMI270 IMU</b><small>400Hz / 俯仰</small></div>
+    <div class="box"><b>编码器 ×2</b><small>位置 / 速度</small></div>
+    <div class="box"><b>TMC2209 ×2</b><small>UART / STEP-DIR</small></div>
+    <div class="box"><b>步进电机 ×2</b><small>左右轮</small></div>
+    <div class="box"><b>JDY-23 BLE</b><small>命令 / 遥测</small></div>
+    <div class="box"><b>flash sector 10/11</b><small>22 项参数</small></div>
+  </div>
+</div>
+
+<h2>2 · 单拍时间轴（loop 内顺序）</h2>
+<table>
+  <tr><th style="width:40px">#</th><th style="width:150px">动作</th><th>说明</th></tr>
+  <tr><td>1</td><td><code>pollBtCommand()</code></td><td>取整行命令；随时可能改变量（SP/MS/EG/SV/O…）</td></tr>
+  <tr><td>2</td><td><code>flushTelemetryTx()</code></td><td>非阻塞发送缓冲</td></tr>
+  <tr><td>3</td><td class="tick">未到 2.5ms → return</td><td>400Hz 节拍闸门</td></tr>
+  <tr><td>4</td><td>超时检测</td><td>间隔 ≥ 2 拍 → 计数 + <code>stopBothMotors()</code> + 重基准</td></tr>
+  <tr><td>5</td><td><code>readBMI270()</code></td><td>失败累计；达阈值 → 停机 + 清全部环 + return</td></tr>
+  <tr><td>6</td><td><code>updateAttitude()</code></td><td>Kalman/互补 → <code>pitch</code>/<code>pitchRate</code></td></tr>
+  <tr><td>7</td><td><code>predictVehicleSpeedKalman()</code></td><td>IMU 加速度 → 速度预测</td></tr>
+  <tr><td>8</td><td>遥测分频</td><td>÷100 → <code>G,</code>（4Hz）；÷400 → <code>D,</code>（1Hz）</td></tr>
+  <tr><td>9</td><td>倒地保护</td><td><code>|pitch-O|</code> 连续确认 / 紧急阈值 → 停机清环 + return</td></tr>
+  <tr><td>10</td><td><code>manualForward.update()</code></td><td><code>^</code> 手动俯仰通路</td></tr>
+  <tr><td>11</td><td><code>updatePositionHold()</code></td><td>位置环（默认 X=0 → 早退）</td></tr>
+  <tr><td>12</td><td class="tick">÷4 → <code>updateOuterLoop()</code></td><td>100Hz：速度 PI / 编码器修正 / 运动驱动</td></tr>
+  <tr><td>13</td><td><code>updateOuterLoopAuthority()</code></td><td>400Hz 权限平滑</td></tr>
+  <tr><td>14</td><td><code>updateBalanceLoop()</code></td><td>直立 PD → <code>finalBalanceOutput</code></td></tr>
+  <tr><td>15</td><td><code>updateTurnLoop()</code></td><td>→ <code>turnOutput</code></td></tr>
+  <tr><td>16</td><td>电机合成</td><td><code>m1 = final + turn</code>，<code>m2 = final - turn</code> → <code>setMotor1/2</code></td></tr>
+  <tr><td>17</td><td>遥测窗口极值 + flush</td><td>250ms 窗口统计陀螺/偏差/输出</td></tr>
+</table>
+
+<h2>3 · 三条闭环通路</h2>
+
+<div class="path">
+  <div class="node">BMI270<em>400Hz</em></div><span class="sep">→</span>
+  <div class="node">readBMI270</div><span class="sep">→</span>
+  <div class="node">updateAttitude<em>pitch</em></div><span class="sep">→</span>
+  <div class="node">updateBalanceLoop<em>PD · 400Hz</em></div><span class="sep">→</span>
+  <div class="node">finalBalanceOutput<em>Hz</em></div><span class="sep">→</span>
+  <div class="node">setMotor1/2</div><span class="sep">→</span>
+  <div class="node">commandStepOutput</div><span class="sep">→</span>
+  <div class="node">STEP ISR → TMC2209</div>
+</div>
+
+<div class="path">
+  <div class="node">编码器 ISR</div><span class="sep">→</span>
+  <div class="node">correctVehicleSpeedKalman<em>100Hz 修正</em></div><span class="sep">┐</span>
+</div>
+<div class="path" style="margin-top:-8px">
+  <div class="node">IMU 加速度</div><span class="sep">→</span>
+  <div class="node">predictVehicleSpeedKalman<em>400Hz 预测</em></div><span class="sep">┴→</span>
+  <div class="node">vehicleSpeed</div><span class="sep">→</span>
+  <div class="node">speedError = target − v</div><span class="sep">→</span>
+  <div class="node">K·speedError<em>限 N=0.8°</em></div><span class="sep">→</span>
+  <div class="node">targetBalanceAngle</div>
+</div>
+
+<div class="path">
+  <div class="node">vehiclePosition</div><span class="sep">→</span>
+  <div class="node">updatePositionHold<em>X=0 默认关</em></div><span class="sep">→</span>
+  <div class="node">positionSpeedTarget</div><span class="sep">→</span>
+  <div class="node">targetForwardSpeed</div>
+</div>
+
+<div class="warn" style="margin-top:18px">
+  <b>结构性瓶颈（讲解 P6 的重点）：</b>速度环输出只作为"倾角修正"叠加到目标角，并被
+  <code>N = MAX_SPEED_ANGLE (0.8°)</code> 硬限幅。修正一旦饱和，"误差再大也只能给 0.8°"，
+  于是系统在静摩擦下只有两种命运：<b>粘住（稳态≈0）</b> 或 <b>一直加速（跑飞）</b> ——
+  这就是"只能点动、不能巡航"的代码级原因，也是 2026-11-19 之后所有实验的根源。
+</div>
+
+<h2>4 · 频率与预算</h2>
+<table>
+  <tr><th>频率</th><th>触发</th><th>内容</th></tr>
+  <tr><td><b>400 Hz</b></td><td>每拍 2.5ms</td><td>IMU 读 / 姿态 / 速度预测 / 权限 / 直立 PD / 转向 / 电机合成</td></tr>
+  <tr><td><b>100 Hz</b></td><td><code>outerLoopDivider==4</code></td><td>速度环 PI · 编码器速度修正 · 运动驱动</td></tr>
+  <tr><td><b>4 Hz</b></td><td><code>FAST_TELEMETRY_DIVIDER=100</code></td><td><code>G,</code> 快帧（8 字段）</td></tr>
+  <tr><td><b>1 Hz</b></td><td><code>TELEMETRY_DIVIDER=400</code></td><td><code>D,</code> 慢帧（78 字段）</td></tr>
+  <tr><td><b>事件</b></td><td>BLE 收到一行</td><td>参数写入 / <code>SP</code> / <code>MS</code> / <code>EG</code> / <code>SV</code> / <code>SAVE</code> / <code>?</code> / <code>^</code></td></tr>
+</table>
+
+<h2>5 · 逐行讲解章节计划</h2>
+<table>
+  <tr><th style="width:52px">章</th><th>主题</th><th style="width:150px">物理行</th><th>核心问题</th></tr>
+  <tr><td><b>P1</b></td><td>调度骨架</td><td>4336–4672 / 5163–5825</td><td>2.5ms 里按什么顺序做什么？掉帧/IMU 失败怎么兜底？</td></tr>
+  <tr><td><b>P2</b></td><td>启动自检链</td><td>310–395 / 4340–4460</td><td>初始化失败为何死循环重试？失败为何必须停电机？</td></tr>
+  <tr><td><b>P3</b></td><td>步进输出与中断</td><td>2845–3020 / 1595–1676</td><td>Hz 如何变成 STEP 脉冲？零保持/反向软斜坡是什么？</td></tr>
+  <tr><td><b>P4</b></td><td>IMU 与姿态</td><td>1677–2035 / 2035–2740</td><td>俯仰角怎么来？融合怎么做的？校准做了什么？</td></tr>
+  <tr><td><b>P5</b></td><td>速度估计</td><td>3027–3336</td><td>预测+修正双层 Kalman 如何不打架？单位是什么？</td></tr>
+  <tr><td><b>P6</b></td><td>外环串级</td><td>3337–4027</td><td>位置→速度→倾角怎么串？N=0.8 为何锁死巡航？</td></tr>
+  <tr><td><b>P7</b></td><td>直立 / 转向环</td><td>4029–4220</td><td>PD 实际算式、限幅顺序、与速度修正如何叠加？</td></tr>
+  <tr><td><b>P8</b></td><td>遥测与 BLE 协议</td><td>4225–4334 / 1455–1600 / 4687–5162</td><td>78 字段契约、9600 预算、命令优先级陷阱</td></tr>
+  <tr><td><b>P9</b></td><td>参数持久化 + 头文件</td><td>4700–4812 + 6 headers</td><td>三层参数、22 项表、FORMAT_VERSION、四件套</td></tr>
+</table>
+
+<footer>
+  配套文档：<code>docs/code-walkthrough/00-STRUCTURE.md</code>（含函数索引、全局量分区、历史坑清单）
+  · 行号会随代码改动漂移，讲解以 <code>函数名</code> 为准、行号为辅。
+</footer>
+
+</body>
+</html>

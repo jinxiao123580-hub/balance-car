@@ -1,0 +1,229 @@
+{
+  "version": 1,
+  "sections": {
+    "kb/00-概览.md": {
+      "updated": "2026-11-19",
+      "sources": [
+        "README.md",
+        "GETTING_STARTED.md",
+        "docs/system-overview.md",
+        "docs/parameters.md",
+        "docs/validation/analysis/20261119-MOTION-CONTROL.md"
+      ],
+      "hashes": {
+        "GETTING_STARTED.md": "c:8b42596b1c40e57b",
+        "README.md": "c:6bc618231de125f4",
+        "docs/parameters.md": "c:1e42ded2a3872fd6",
+        "docs/system-overview.md": "c:cc11db16ab638354",
+        "docs/validation/analysis/20261119-MOTION-CONTROL.md": "c:22dffe7b04f3b788"
+      }
+    },
+    "kb/10-架构.md": {
+      "updated": "2026-11-19",
+      "sources": [
+        "software/**",
+        "docs/system-overview.md",
+        "README.md"
+      ],
+      "hashes": {
+        "README.md": "c:6bc618231de125f4",
+        "docs/system-overview.md": "c:cc11db16ab638354",
+        "software/analysis/analyze_ble_log.py": "c:023950b2e18585bb",
+        "software/analysis/analyze_fwdback_motion.py": "c:89d32c5c4c9b9266",
+        "software/analysis/analyze_jog_followup.py": "c:0fe367e0eb60d155",
+        "software/analysis/analyze_jog_instability.py": "c:6791425c520cf4a3",
+        "software/analysis/analyze_long_balance.py": "c:1ff2c52bcaa63b76",
+        "software/analysis/analyze_manual_motion.py": "c:c322eccd861f32c3",
+        "software/analysis/analyze_motion_test.py": "c:eac7bc4a502ffc84",
+        "software/analysis/analyze_position_authority.py": "c:5c80e7e046791db9",
+        "software/analysis/binned_ratio.py": "c:aaac1ea9db7cad9e",
+        "software/analysis/ble_air_test.py": "c:f868c773185c39e2",
+        "software/analysis/ble_balance_tune.py": "c:eb023242ee1c52d1",
+        "software/analysis/ble_breakscan.py": "c:3b5ef8953161b4b7",
+        "software/analysis/ble_cycle.py": "c:f09bd231180800fb",
+        "software/analysis/ble_demo.py": "c:d5e8769f7ae79cda",
+        "software/analysis/ble_demo_case.py": "c:580aa5f4255dc6e2",
+        "software/analysis/ble_drift.py": "c:593d574b40cbc952",
+        "software/analysis/ble_duty.py": "c:c0757bca8fb1df89",
+        "software/analysis/ble_fb.py": "c:17d06bbe538ca98f",
+        "software/analysis/ble_find_o.py": "c:ed826f21b4345cba",
+        "software/analysis/ble_gear_sweep.py": "c:3ee18fbc8ba851ba",
+        "software/analysis/ble_kick_test.py": "c:6f31b050165c7a8b",
+        "software/analysis/ble_leanpulse.py": "c:4b1b4eb82daa96f1",
+        "software/analysis/ble_leantest.py": "c:e029bac9231a17ca",
+        "software/analysis/ble_lean_scan.py": "c:18b6a0293605991f",
+        "software/analysis/ble_microstep.py": "c:c1db22eaf0558f06",
+        "software/analysis/ble_olearn.py": "c:4b5ec259dfc62443",
+        "software/analysis/ble_oservo.py": "c:c56149831a288581",
+        "software/analysis/ble_otest.py": "c:cdd33eced1f4fe75",
+        "software/analysis/ble_o_encoder.py": "c:e0a3f02c939fa7c8",
+        "software/analysis/ble_pairmotion.py": "c:535c5ea8c7f4c1b7",
+        "software/analysis/ble_profile.py": "c:50eed471058c878f",
+        "software/analysis/ble_profile_test.py": "c:f114a6c5c46b6d06",
+        "software/analysis/ble_pulse_test.py": "c:5951562a48e20692",
+        "software/analysis/ble_pwm.py": "c:12c50919a5d8150a",
+        "software/analysis/ble_send.py": "c:89f5eeda5961b205",
+        "software/analysis/ble_spcycle.py": "c:d6f384f39538517d",
+        "software/analysis/ble_sptest.py": "c:04b8dfc5dbfd2f81",
+        "software/analysis/ble_trim_tune.py": "c:6b75111c10d16829",
+        "software/analysis/ble_vservo.py": "c:440ab93de2fa72a0",
+        "software/analysis/ble_waypoint.py": "c:1d2c34dbcf2cbf4f",
+        "software/analysis/calibrate_balance_point.py": "c:34ae4b9fc433f154",
+        "software/analysis/check_param_persist.py": "c:9b023161c8f7d133",
+        "software/analysis/cpr_estimate.py": "c:9b80eb0731a64d5f",
+        "software/analysis/drive_motion_test.py": "c:6aab92ea5d7062b7",
+        "software/analysis/README.md": "c:3d3e0e550ec7eb9e",
+        "software/analysis/verify_trust_gate.py": "c:4fc2ff8a61f3785b",
+        "software/ble-panel/ble_tune_panel.bat": "c:0d0fe2f9a0a959f4",
+        "software/ble-panel/ble_tune_panel.py": "c:38baa2bc22d9e955",
+        "software/ble-panel/device.local.bat": "c:46f8422b600c4bc5",
+        "software/ble-panel/device.local.example.bat": "c:0097a0c5267c7044",
+        "software/ble-panel/README.md": "c:f68cda3f351a856e",
+        "software/ble-panel/requirements.txt": "c:55d9b03c068b0ae9",
+        "software/ble-panel/test_jog_config.py": "c:d09341acb810fddb",
+        "software/ble-panel/test_param_persist.py": "c:0b2ee86d56d412b8",
+        "software/ble-panel/test_turn_controls.py": "c:e3610bfa234ad357",
+        "software/firmware/platformio.ini": "c:511ed92f177b5b3a",
+        "software/firmware/README.md": "c:53272d8d1e83c049",
+        "software/ros/backends.py": "c:b0cd1406441271d4",
+        "software/ros/car_cmd_node.py": "c:f1fc25dfd1da34dc",
+        "software/ros/car_state_node.py": "c:663337fdd662be58",
+        "software/ros/gframe.py": "c:1ac0dc7f4f9a57eb",
+        "software/ros/README.md": "c:55136199afdfb2fc",
+        "software/firmware/include/README": "c:839698d9d0f084c7",
+        "software/firmware/lib/README": "c:d19c11d56f4c55c4",
+        "software/firmware/src/main.cpp": "c:544da4a7fbbc29f8",
+        "software/firmware/src/manual_motion.h": "c:ae53abfbcf65a395",
+        "software/firmware/src/manual_turn.h": "c:1cb736526f1bac7c",
+        "software/firmware/src/motion_drive.h": "c:6daa183a7c831b37",
+        "software/firmware/src/param_flash_f4.h": "c:b54ccce6e6dd32cd",
+        "software/firmware/src/param_store.h": "c:dbee05806ac0a729",
+        "software/firmware/src/position_jog.h": "c:2a63b9454db1cdf2",
+        "software/firmware/test/README": "c:16efd262462298ed",
+        "software/firmware/test/run_forward_regressions.py": "c:251d9ce3b95337e8",
+        "software/firmware/test/run_hold_command_regressions.py": "c:9ca0e3654484afa0",
+        "software/firmware/test/run_jog_command_regressions.py": "c:f28745f9c4fbcd5f",
+        "software/firmware/test/run_jog_integration_regressions.py": "c:798ea8a1629993e4",
+        "software/firmware/test/run_jog_regressions.py": "c:6c95428da099a091",
+        "software/firmware/test/run_motion_drive_regressions.py": "c:85b980f3d1332990",
+        "software/firmware/test/run_motion_regressions.py": "c:dead5fb1a11844c3",
+        "software/firmware/test/run_param_store_regressions.py": "c:207d5e0c62f413c2",
+        "software/firmware/test/run_position_mode_regressions.py": "c:e72317a82d4ac109",
+        "software/firmware/test/run_turn_regressions.py": "c:d7a2d359a8e8a41e"
+      }
+    },
+    "kb/20-模块/固件主循环.md": {
+      "updated": "2026-11-19",
+      "sources": [
+        "software/firmware/src/main.cpp",
+        "software/firmware/src/*.h",
+        "software/firmware/platformio.ini"
+      ],
+      "hashes": {
+        "software/firmware/platformio.ini": "c:511ed92f177b5b3a",
+        "software/firmware/src/main.cpp": "c:544da4a7fbbc29f8",
+        "software/firmware/src/manual_motion.h": "c:ae53abfbcf65a395",
+        "software/firmware/src/manual_turn.h": "c:1cb736526f1bac7c",
+        "software/firmware/src/motion_drive.h": "c:6daa183a7c831b37",
+        "software/firmware/src/param_flash_f4.h": "c:b54ccce6e6dd32cd",
+        "software/firmware/src/param_store.h": "c:dbee05806ac0a729",
+        "software/firmware/src/position_jog.h": "c:2a63b9454db1cdf2"
+      }
+    },
+    "kb/20-模块/蓝牙面板.md": {
+      "updated": "2026-11-19",
+      "sources": [
+        "software/ble-panel/**"
+      ],
+      "hashes": {
+        "software/ble-panel/ble_tune_panel.bat": "c:0d0fe2f9a0a959f4",
+        "software/ble-panel/ble_tune_panel.py": "c:38baa2bc22d9e955",
+        "software/ble-panel/device.local.bat": "c:46f8422b600c4bc5",
+        "software/ble-panel/device.local.example.bat": "c:0097a0c5267c7044",
+        "software/ble-panel/README.md": "c:f68cda3f351a856e",
+        "software/ble-panel/requirements.txt": "c:55d9b03c068b0ae9",
+        "software/ble-panel/test_jog_config.py": "c:d09341acb810fddb",
+        "software/ble-panel/test_param_persist.py": "c:0b2ee86d56d412b8",
+        "software/ble-panel/test_turn_controls.py": "c:e3610bfa234ad357"
+      }
+    },
+    "kb/30-决策/TMC2209独立模式.md": {
+      "updated": "2026-11-19",
+      "sources": [
+        "software/firmware/src/main.cpp",
+        "docs/system-overview.md",
+        "README.md"
+      ],
+      "hashes": {
+        "README.md": "c:6bc618231de125f4",
+        "docs/system-overview.md": "c:cc11db16ab638354",
+        "software/firmware/src/main.cpp": "c:544da4a7fbbc29f8"
+      }
+    },
+    "kb/30-决策/参数基准-2026-11-19.md": {
+      "updated": "2026-11-19",
+      "sources": [
+        "docs/validation/analysis/20261119-MOTION-CONTROL.md",
+        "docs/parameters.md",
+        "software/firmware/src/main.cpp",
+        "software/ble-panel/ble_tune_panel.py"
+      ],
+      "hashes": {
+        "docs/parameters.md": "c:1e42ded2a3872fd6",
+        "software/ble-panel/ble_tune_panel.py": "c:38baa2bc22d9e955",
+        "software/firmware/src/main.cpp": "c:544da4a7fbbc29f8",
+        "docs/validation/analysis/20261119-MOTION-CONTROL.md": "c:22dffe7b04f3b788"
+      }
+    },
+    "kb/20-操作/构建、烧录与调参.md": {
+      "updated": "2026-11-19",
+      "sources": [
+        "software/firmware/platformio.ini",
+        "build-firmware.bat",
+        "flash-firmware.bat",
+        "open-panel.bat"
+      ],
+      "hashes": {
+        "build-firmware.bat": "c:f1f8403b37d6ea4a",
+        "flash-firmware.bat": "c:13876338a7789246",
+        "open-panel.bat": "c:d5d806d218f9fb05",
+        "software/firmware/platformio.ini": "c:511ed92f177b5b3a"
+      }
+    },
+    "kb/90-坑/参数与配置.md": {
+      "updated": "2026-11-19",
+      "sources": [
+        "software/firmware/src/main.cpp",
+        "software/ble-panel/ble_tune_panel.py",
+        "docs/parameters.md",
+        "docs/validation/analysis/20261119-MOTION-CONTROL.md"
+      ],
+      "hashes": {
+        "docs/parameters.md": "c:1e42ded2a3872fd6",
+        "software/ble-panel/ble_tune_panel.py": "c:38baa2bc22d9e955",
+        "software/firmware/src/main.cpp": "c:544da4a7fbbc29f8",
+        "docs/validation/analysis/20261119-MOTION-CONTROL.md": "c:22dffe7b04f3b788"
+      }
+    },
+    "kb/90-坑/硬件与运动.md": {
+      "updated": "2026-11-19",
+      "sources": [
+        "software/firmware/src/main.cpp",
+        "software/firmware/src/*.h",
+        "docs/system-overview.md",
+        "README.md"
+      ],
+      "hashes": {
+        "README.md": "c:6bc618231de125f4",
+        "docs/system-overview.md": "c:cc11db16ab638354",
+        "software/firmware/src/main.cpp": "c:544da4a7fbbc29f8",
+        "software/firmware/src/manual_motion.h": "c:ae53abfbcf65a395",
+        "software/firmware/src/manual_turn.h": "c:1cb736526f1bac7c",
+        "software/firmware/src/motion_drive.h": "c:6daa183a7c831b37",
+        "software/firmware/src/param_flash_f4.h": "c:b54ccce6e6dd32cd",
+        "software/firmware/src/param_store.h": "c:dbee05806ac0a729",
+        "software/firmware/src/position_jog.h": "c:2a63b9454db1cdf2"
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+[原] O=2.990
+  [测] O=2.490  drift=-24.13 mm/s  pitch=-3.79
+  [测] O=2.990  drift=-4.22 mm/s  pitch=3.21
+  [测] O=3.490  drift=-7.98 mm/s  pitch=3.56
+[粗扫] 未找到过零点，用 |drift| 最小点 2.99 作中心
+  [测] O=2.990  drift=-3.28 mm/s  pitch=3.17
+  [测] O=3.240  drift=-3.46 mm/s  pitch=3.38
+  [测] O=3.365  drift=+0.12 mm/s  pitch=3.29
+
+[结论] O≈3.365  drift=+0.12 mm/s
+[SAVE] 已写入 flash

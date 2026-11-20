@@ -1,0 +1,831 @@
+{
+  "generated_at": "2026-11-19T17:02:50+08:00",
+  "count": 165,
+  "files": {
+    ".gitattributes": {
+      "size": 81,
+      "hash": "c:dda1642f14951754",
+      "lang": ""
+    },
+    ".gitignore": {
+      "size": 1067,
+      "hash": "c:ec01d537312ce6b0",
+      "lang": ""
+    },
+    ".kbignore": {
+      "size": 583,
+      "hash": "c:dbb5cd942583054b",
+      "lang": ""
+    },
+    "build-firmware.bat": {
+      "size": 240,
+      "hash": "c:f1f8403b37d6ea4a",
+      "lang": "batch"
+    },
+    "flash-firmware.bat": {
+      "size": 715,
+      "hash": "c:13876338a7789246",
+      "lang": "batch"
+    },
+    "GETTING_STARTED.md": {
+      "size": 2766,
+      "hash": "c:8b42596b1c40e57b",
+      "lang": "markdown"
+    },
+    "NOTICE.md": {
+      "size": 1245,
+      "hash": "c:4fdc588b7e26e94e",
+      "lang": "markdown"
+    },
+    "open-panel.bat": {
+      "size": 60,
+      "hash": "c:d5d806d218f9fb05",
+      "lang": "batch"
+    },
+    "README.md": {
+      "size": 5809,
+      "hash": "c:6bc618231de125f4",
+      "lang": "markdown"
+    },
+    "docs/parameters.md": {
+      "size": 3276,
+      "hash": "c:1e42ded2a3872fd6",
+      "lang": "markdown"
+    },
+    "docs/project-inventory.json": {
+      "size": 57242,
+      "hash": "c:1ce5b9e250064a5f",
+      "lang": "json"
+    },
+    "docs/publishing.md": {
+      "size": 964,
+      "hash": "c:4c1e8c6eb733b84c",
+      "lang": "markdown"
+    },
+    "docs/system-overview.md": {
+      "size": 3139,
+      "hash": "c:cc11db16ab638354",
+      "lang": "markdown"
+    },
+    "docs/turning.md": {
+      "size": 7331,
+      "hash": "c:1cdc26bcc348fd2c",
+      "lang": "markdown"
+    },
+    "software/analysis/analyze_ble_log.py": {
+      "size": 18383,
+      "hash": "c:023950b2e18585bb",
+      "lang": "python"
+    },
+    "software/analysis/analyze_fwdback_motion.py": {
+      "size": 3878,
+      "hash": "c:89d32c5c4c9b9266",
+      "lang": "python"
+    },
+    "software/analysis/analyze_jog_followup.py": {
+      "size": 7492,
+      "hash": "c:0fe367e0eb60d155",
+      "lang": "python"
+    },
+    "software/analysis/analyze_jog_instability.py": {
+      "size": 6922,
+      "hash": "c:6791425c520cf4a3",
+      "lang": "python"
+    },
+    "software/analysis/analyze_long_balance.py": {
+      "size": 3083,
+      "hash": "c:1ff2c52bcaa63b76",
+      "lang": "python"
+    },
+    "software/analysis/analyze_manual_motion.py": {
+      "size": 4436,
+      "hash": "c:c322eccd861f32c3",
+      "lang": "python"
+    },
+    "software/analysis/analyze_motion_test.py": {
+      "size": 8998,
+      "hash": "c:eac7bc4a502ffc84",
+      "lang": "python"
+    },
+    "software/analysis/analyze_position_authority.py": {
+      "size": 9256,
+      "hash": "c:5c80e7e046791db9",
+      "lang": "python"
+    },
+    "software/analysis/binned_ratio.py": {
+      "size": 5240,
+      "hash": "c:aaac1ea9db7cad9e",
+      "lang": "python"
+    },
+    "software/analysis/ble_air_test.py": {
+      "size": 5571,
+      "hash": "c:f868c773185c39e2",
+      "lang": "python"
+    },
+    "software/analysis/ble_balance_tune.py": {
+      "size": 6222,
+      "hash": "c:eb023242ee1c52d1",
+      "lang": "python"
+    },
+    "software/analysis/ble_breakscan.py": {
+      "size": 6774,
+      "hash": "c:3b5ef8953161b4b7",
+      "lang": "python"
+    },
+    "software/analysis/ble_cycle.py": {
+      "size": 8865,
+      "hash": "c:f09bd231180800fb",
+      "lang": "python"
+    },
+    "software/analysis/ble_demo.py": {
+      "size": 11364,
+      "hash": "c:d5e8769f7ae79cda",
+      "lang": "python"
+    },
+    "software/analysis/ble_demo_case.py": {
+      "size": 14691,
+      "hash": "c:580aa5f4255dc6e2",
+      "lang": "python"
+    },
+    "software/analysis/ble_drift.py": {
+      "size": 4008,
+      "hash": "c:593d574b40cbc952",
+      "lang": "python"
+    },
+    "software/analysis/ble_duty.py": {
+      "size": 8635,
+      "hash": "c:c0757bca8fb1df89",
+      "lang": "python"
+    },
+    "software/analysis/ble_fb.py": {
+      "size": 8981,
+      "hash": "c:17d06bbe538ca98f",
+      "lang": "python"
+    },
+    "software/analysis/ble_find_o.py": {
+      "size": 8685,
+      "hash": "c:ed826f21b4345cba",
+      "lang": "python"
+    },
+    "software/analysis/ble_gear_sweep.py": {
+      "size": 8470,
+      "hash": "c:3ee18fbc8ba851ba",
+      "lang": "python"
+    },
+    "software/analysis/ble_kick_test.py": {
+      "size": 6174,
+      "hash": "c:6f31b050165c7a8b",
+      "lang": "python"
+    },
+    "software/analysis/ble_leanpulse.py": {
+      "size": 7807,
+      "hash": "c:4b1b4eb82daa96f1",
+      "lang": "python"
+    },
+    "software/analysis/ble_leantest.py": {
+      "size": 9483,
+      "hash": "c:e029bac9231a17ca",
+      "lang": "python"
+    },
+    "software/analysis/ble_lean_scan.py": {
+      "size": 11185,
+      "hash": "c:18b6a0293605991f",
+      "lang": "python"
+    },
+    "software/analysis/ble_microstep.py": {
+      "size": 7958,
+      "hash": "c:c1db22eaf0558f06",
+      "lang": "python"
+    },
+    "software/analysis/ble_olearn.py": {
+      "size": 5776,
+      "hash": "c:4b5ec259dfc62443",
+      "lang": "python"
+    },
+    "software/analysis/ble_oservo.py": {
+      "size": 9028,
+      "hash": "c:c56149831a288581",
+      "lang": "python"
+    },
+    "software/analysis/ble_otest.py": {
+      "size": 8689,
+      "hash": "c:cdd33eced1f4fe75",
+      "lang": "python"
+    },
+    "software/analysis/ble_o_encoder.py": {
+      "size": 5223,
+      "hash": "c:e0a3f02c939fa7c8",
+      "lang": "python"
+    },
+    "software/analysis/ble_pairmotion.py": {
+      "size": 8336,
+      "hash": "c:535c5ea8c7f4c1b7",
+      "lang": "python"
+    },
+    "software/analysis/ble_profile.py": {
+      "size": 9961,
+      "hash": "c:50eed471058c878f",
+      "lang": "python"
+    },
+    "software/analysis/ble_profile_test.py": {
+      "size": 7810,
+      "hash": "c:f114a6c5c46b6d06",
+      "lang": "python"
+    },
+    "software/analysis/ble_pulse_test.py": {
+      "size": 6764,
+      "hash": "c:5951562a48e20692",
+      "lang": "python"
+    },
+    "software/analysis/ble_pwm.py": {
+      "size": 6780,
+      "hash": "c:12c50919a5d8150a",
+      "lang": "python"
+    },
+    "software/analysis/ble_send.py": {
+      "size": 4425,
+      "hash": "c:89f5eeda5961b205",
+      "lang": "python"
+    },
+    "software/analysis/ble_spcycle.py": {
+      "size": 5543,
+      "hash": "c:d6f384f39538517d",
+      "lang": "python"
+    },
+    "software/analysis/ble_sptest.py": {
+      "size": 5195,
+      "hash": "c:04b8dfc5dbfd2f81",
+      "lang": "python"
+    },
+    "software/analysis/ble_trim_tune.py": {
+      "size": 6526,
+      "hash": "c:6b75111c10d16829",
+      "lang": "python"
+    },
+    "software/analysis/ble_vservo.py": {
+      "size": 11219,
+      "hash": "c:440ab93de2fa72a0",
+      "lang": "python"
+    },
+    "software/analysis/ble_waypoint.py": {
+      "size": 7195,
+      "hash": "c:1d2c34dbcf2cbf4f",
+      "lang": "python"
+    },
+    "software/analysis/calibrate_balance_point.py": {
+      "size": 6640,
+      "hash": "c:34ae4b9fc433f154",
+      "lang": "python"
+    },
+    "software/analysis/check_param_persist.py": {
+      "size": 6463,
+      "hash": "c:9b023161c8f7d133",
+      "lang": "python"
+    },
+    "software/analysis/cpr_estimate.py": {
+      "size": 4949,
+      "hash": "c:9b80eb0731a64d5f",
+      "lang": "python"
+    },
+    "software/analysis/drive_motion_test.py": {
+      "size": 11056,
+      "hash": "c:6aab92ea5d7062b7",
+      "lang": "python"
+    },
+    "software/analysis/README.md": {
+      "size": 669,
+      "hash": "c:3d3e0e550ec7eb9e",
+      "lang": "markdown"
+    },
+    "software/analysis/verify_trust_gate.py": {
+      "size": 7270,
+      "hash": "c:4fc2ff8a61f3785b",
+      "lang": "python"
+    },
+    "software/ble-panel/ble_tune_panel.bat": {
+      "size": 458,
+      "hash": "c:0d0fe2f9a0a959f4",
+      "lang": "batch"
+    },
+    "software/ble-panel/ble_tune_panel.py": {
+      "size": 64078,
+      "hash": "c:38baa2bc22d9e955",
+      "lang": "python"
+    },
+    "software/ble-panel/device.local.bat": {
+      "size": 112,
+      "hash": "c:46f8422b600c4bc5",
+      "lang": "batch"
+    },
+    "software/ble-panel/device.local.example.bat": {
+      "size": 104,
+      "hash": "c:0097a0c5267c7044",
+      "lang": "batch"
+    },
+    "software/ble-panel/README.md": {
+      "size": 1896,
+      "hash": "c:f68cda3f351a856e",
+      "lang": "markdown"
+    },
+    "software/ble-panel/requirements.txt": {
+      "size": 47,
+      "hash": "c:55d9b03c068b0ae9",
+      "lang": ""
+    },
+    "software/ble-panel/test_jog_config.py": {
+      "size": 1294,
+      "hash": "c:d09341acb810fddb",
+      "lang": "python"
+    },
+    "software/ble-panel/test_param_persist.py": {
+      "size": 2358,
+      "hash": "c:0b2ee86d56d412b8",
+      "lang": "python"
+    },
+    "software/ble-panel/test_turn_controls.py": {
+      "size": 4297,
+      "hash": "c:e3610bfa234ad357",
+      "lang": "python"
+    },
+    "software/firmware/platformio.ini": {
+      "size": 619,
+      "hash": "c:511ed92f177b5b3a",
+      "lang": ""
+    },
+    "software/firmware/README.md": {
+      "size": 666,
+      "hash": "c:53272d8d1e83c049",
+      "lang": "markdown"
+    },
+    "software/ros/backends.py": {
+      "size": 7286,
+      "hash": "c:b0cd1406441271d4",
+      "lang": "python"
+    },
+    "software/ros/car_cmd_node.py": {
+      "size": 3843,
+      "hash": "c:f1fc25dfd1da34dc",
+      "lang": "python"
+    },
+    "software/ros/car_state_node.py": {
+      "size": 3850,
+      "hash": "c:663337fdd662be58",
+      "lang": "python"
+    },
+    "software/ros/gframe.py": {
+      "size": 3479,
+      "hash": "c:1ac0dc7f4f9a57eb",
+      "lang": "python"
+    },
+    "software/ros/README.md": {
+      "size": 1881,
+      "hash": "c:55136199afdfb2fc",
+      "lang": "markdown"
+    },
+    "software/firmware/include/README": {
+      "size": 1301,
+      "hash": "c:839698d9d0f084c7",
+      "lang": ""
+    },
+    "software/firmware/lib/README": {
+      "size": 1100,
+      "hash": "c:d19c11d56f4c55c4",
+      "lang": ""
+    },
+    "software/firmware/src/main.cpp": {
+      "size": 144689,
+      "hash": "c:544da4a7fbbc29f8",
+      "lang": "cpp"
+    },
+    "software/firmware/src/manual_motion.h": {
+      "size": 3743,
+      "hash": "c:ae53abfbcf65a395",
+      "lang": "c"
+    },
+    "software/firmware/src/manual_turn.h": {
+      "size": 2051,
+      "hash": "c:1cb736526f1bac7c",
+      "lang": "c"
+    },
+    "software/firmware/src/motion_drive.h": {
+      "size": 7577,
+      "hash": "c:6daa183a7c831b37",
+      "lang": "c"
+    },
+    "software/firmware/src/param_flash_f4.h": {
+      "size": 3341,
+      "hash": "c:b54ccce6e6dd32cd",
+      "lang": "c"
+    },
+    "software/firmware/src/param_store.h": {
+      "size": 9272,
+      "hash": "c:dbee05806ac0a729",
+      "lang": "c"
+    },
+    "software/firmware/src/position_jog.h": {
+      "size": 6663,
+      "hash": "c:2a63b9454db1cdf2",
+      "lang": "c"
+    },
+    "software/firmware/test/README": {
+      "size": 529,
+      "hash": "c:16efd262462298ed",
+      "lang": ""
+    },
+    "software/firmware/test/run_forward_regressions.py": {
+      "size": 7242,
+      "hash": "c:251d9ce3b95337e8",
+      "lang": "python"
+    },
+    "software/firmware/test/run_hold_command_regressions.py": {
+      "size": 2339,
+      "hash": "c:9ca0e3654484afa0",
+      "lang": "python"
+    },
+    "software/firmware/test/run_jog_command_regressions.py": {
+      "size": 2518,
+      "hash": "c:f28745f9c4fbcd5f",
+      "lang": "python"
+    },
+    "software/firmware/test/run_jog_integration_regressions.py": {
+      "size": 4062,
+      "hash": "c:798ea8a1629993e4",
+      "lang": "python"
+    },
+    "software/firmware/test/run_jog_regressions.py": {
+      "size": 5906,
+      "hash": "c:6c95428da099a091",
+      "lang": "python"
+    },
+    "software/firmware/test/run_motion_drive_regressions.py": {
+      "size": 10643,
+      "hash": "c:85b980f3d1332990",
+      "lang": "python"
+    },
+    "software/firmware/test/run_motion_regressions.py": {
+      "size": 4507,
+      "hash": "c:dead5fb1a11844c3",
+      "lang": "python"
+    },
+    "software/firmware/test/run_param_store_regressions.py": {
+      "size": 13990,
+      "hash": "c:207d5e0c62f413c2",
+      "lang": "python"
+    },
+    "software/firmware/test/run_position_mode_regressions.py": {
+      "size": 6484,
+      "hash": "c:e72317a82d4ac109",
+      "lang": "python"
+    },
+    "software/firmware/test/run_turn_regressions.py": {
+      "size": 2365,
+      "hash": "c:d7a2d359a8e8a41e",
+      "lang": "python"
+    },
+    "docs/demo/README.md": {
+      "size": 398,
+      "hash": "c:0101510c8c9e5440",
+      "lang": "markdown"
+    },
+    "docs/design/microros-integration-research-2026-10-29.md": {
+      "size": 21971,
+      "hash": "c:5e27cfec85e2d9ab",
+      "lang": "markdown"
+    },
+    "docs/design/README.md": {
+      "size": 469,
+      "hash": "c:fbf118b37461e530",
+      "lang": "markdown"
+    },
+    "docs/images/README.md": {
+      "size": 685,
+      "hash": "c:ad8c04f2d705027b",
+      "lang": "markdown"
+    },
+    "docs/research/forward-motion-reference-20261029-evidence.json": {
+      "size": 558,
+      "hash": "c:4540b4626899c3a4",
+      "lang": "json"
+    },
+    "docs/research/forward-motion-reference-20261029.md": {
+      "size": 5095,
+      "hash": "c:7c6082f90dafd949",
+      "lang": "markdown"
+    },
+    "docs/validation/motion-test-protocol.md": {
+      "size": 4347,
+      "hash": "c:73502e8a45b0840c",
+      "lang": "markdown"
+    },
+    "docs/validation/README.md": {
+      "size": 8913,
+      "hash": "c:b768f02c8cd56d41",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261112-FINDINGS.json": {
+      "size": 5671,
+      "hash": "c:a29539e1f79c85ba",
+      "lang": "json"
+    },
+    "docs/validation/analysis/20261112-FINDINGS2.json": {
+      "size": 3324,
+      "hash": "c:0c62108cdd362971",
+      "lang": "json"
+    },
+    "docs/validation/analysis/20261112-MECH-REVIEW.md": {
+      "size": 19519,
+      "hash": "c:1efe069af3d393f4",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261112-SUMMARY.md": {
+      "size": 6576,
+      "hash": "c:2a4304b319119454",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261112-重心偏置建模与前后运动方案.md": {
+      "size": 6632,
+      "hash": "c:415aee6107d26a6e",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261113-ASYMMETRY-AUDIT.md": {
+      "size": 4132,
+      "hash": "c:74cb55a5f858d5a0",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261113-PWM-FINDINGS.md": {
+      "size": 3978,
+      "hash": "c:cac8c2f63ddd8072",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261113-REPLY.md": {
+      "size": 4577,
+      "hash": "c:44d3820d4ae74de1",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261113-ROS-PLAN-JETSON.md": {
+      "size": 21811,
+      "hash": "c:6a29cfc2950f6682",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261113-ROS-PLAN.md": {
+      "size": 12862,
+      "hash": "c:2e37fed891ad97c9",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261113-WEEKLY.md": {
+      "size": 7335,
+      "hash": "c:edd248b0b1af3fca",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261119-FINDINGS.json": {
+      "size": 3865,
+      "hash": "c:14e982b77440e957",
+      "lang": "json"
+    },
+    "docs/validation/analysis/20261119-MOTION-CONTROL.md": {
+      "size": 5077,
+      "hash": "c:22dffe7b04f3b788",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261029-direct-pitch/README.md": {
+      "size": 646,
+      "hash": "c:bdd24b2805944811",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261029-direct-pitch/summary.json": {
+      "size": 386,
+      "hash": "c:a840f81d3b2a4490",
+      "lang": "json"
+    },
+    "docs/validation/analysis/20261029-forward-target-range/README.md": {
+      "size": 1123,
+      "hash": "c:8cf40de502c08fb6",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261029-forward-target-range/summary.json": {
+      "size": 755,
+      "hash": "c:8e533ef5fa9ce58a",
+      "lang": "json"
+    },
+    "docs/validation/analysis/20261029-manual-motion/README.md": {
+      "size": 3484,
+      "hash": "c:01ddecdd5420cc69",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261029-manual-motion/summary.json": {
+      "size": 2648,
+      "hash": "c:8f2185b5b8c29bb5",
+      "lang": "json"
+    },
+    "docs/validation/analysis/20261105-fwdback-motion/report.md": {
+      "size": 7063,
+      "hash": "c:62988f50002f6b09",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261106-1418-stable/report.md": {
+      "size": 2962,
+      "hash": "c:24da758dbbe7a7e4",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261106-1438-learning/report.md": {
+      "size": 3782,
+      "hash": "c:d89efedbb09e4323",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261106-direction-asymmetry/report.md": {
+      "size": 3138,
+      "hash": "c:fbe84518227847ce",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261106-gear-trial/report.md": {
+      "size": 3963,
+      "hash": "c:e44719ff4520e23e",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261106-instability/report.md": {
+      "size": 3419,
+      "hash": "c:d02a243001bfd27d",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261106-press-variance/report.md": {
+      "size": 4831,
+      "hash": "c:84ad6c0b86be621e",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261110-1018-first-quantified/report.md": {
+      "size": 3006,
+      "hash": "c:4f56c9a030e4b0ff",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261110-gear-cap-and-param-persist/after_boot.json": {
+      "size": 441,
+      "hash": "c:e67aa7147001e06d",
+      "lang": "json"
+    },
+    "docs/validation/analysis/20261110-gear-cap-and-param-persist/after_save.json": {
+      "size": 441,
+      "hash": "c:e67aa7147001e06d",
+      "lang": "json"
+    },
+    "docs/validation/analysis/20261110-gear-cap-and-param-persist/before_save.json": {
+      "size": 441,
+      "hash": "c:efe81f20d231eb6b",
+      "lang": "json"
+    },
+    "docs/validation/analysis/20261110-gear-cap-and-param-persist/report.md": {
+      "size": 4219,
+      "hash": "c:ad736d3d27033e6a",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261111-fwd-bwd-o2/fb2_g10.log": {
+      "size": 1030,
+      "hash": "c:537d1d060a373b4f",
+      "lang": ""
+    },
+    "docs/validation/analysis/20261111-fwd-bwd-o2/fb_g10.log": {
+      "size": 828,
+      "hash": "c:46b45fd38204cbd5",
+      "lang": ""
+    },
+    "docs/validation/analysis/20261111-fwd-bwd-o2/tab_fb_10.log": {
+      "size": 872,
+      "hash": "c:75d933311b8b3c6c",
+      "lang": ""
+    },
+    "docs/validation/analysis/20261119-nocam/findo01": {
+      "size": 356,
+      "hash": "c:4ec5d5bebcd5486d",
+      "lang": ""
+    },
+    "docs/validation/analysis/20261119-nocam/findo02": {
+      "size": 251,
+      "hash": "c:dc47d2c82463d14b",
+      "lang": ""
+    },
+    "docs/validation/analysis/config-apply-20261030-142358/evidence.json": {
+      "size": 378,
+      "hash": "c:6e266344de531979",
+      "lang": "json"
+    },
+    "docs/validation/analysis/config-apply-20261030-142358/report.md": {
+      "size": 2391,
+      "hash": "c:3e2474eaf0a11fd0",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/fixed-angle-request-20261030-152627/metrics.json": {
+      "size": 2483,
+      "hash": "c:1cb993b2eac720d3",
+      "lang": "json"
+    },
+    "docs/validation/analysis/fixed-angle-request-20261030-152627/report.md": {
+      "size": 2831,
+      "hash": "c:8e0bc480545e0d61",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/fixed-angle-review-20261030-173422/metrics.json": {
+      "size": 3085,
+      "hash": "c:39ba6bd27297453b",
+      "lang": "json"
+    },
+    "docs/validation/analysis/fixed-angle-review-20261030-173422/report.md": {
+      "size": 4329,
+      "hash": "c:392dd862efd38970",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/jog-followup-20261030-094816/evidence.json": {
+      "size": 4931,
+      "hash": "c:fd261fed14dfad25",
+      "lang": "json"
+    },
+    "docs/validation/analysis/jog-followup-20261030-094816/report.md": {
+      "size": 3782,
+      "hash": "c:de201456d40cbefa",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/jog-instability-20261030/evidence.json": {
+      "size": 3192,
+      "hash": "c:6f78276877ced787",
+      "lang": "json"
+    },
+    "docs/validation/analysis/jog-instability-20261030/report.md": {
+      "size": 3631,
+      "hash": "c:2e7f122189e86e27",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/long-balance-20261031-101235/metrics.json": {
+      "size": 8066,
+      "hash": "c:a3f8e7c356425bbf",
+      "lang": "json"
+    },
+    "docs/validation/analysis/long-balance-20261031-101235/report.md": {
+      "size": 5352,
+      "hash": "c:cc5fc6b7899ba531",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/position-authority-20261030-110500/evidence.json": {
+      "size": 11416,
+      "hash": "c:ebe75462c6708a08",
+      "lang": "json"
+    },
+    "docs/validation/analysis/position-authority-20261030-110500/report.md": {
+      "size": 5247,
+      "hash": "c:c2ce9f64f8776085",
+      "lang": "markdown"
+    },
+    "docs/validation/analysis/20261113-nocam/demo_case/TAKES.md": {
+      "size": 1405,
+      "hash": "c:b3badb0bf19b13d8",
+      "lang": "markdown"
+    },
+    "docs/design/components/driver-tmc2209-mks.md": {
+      "size": 2182,
+      "hash": "c:358589b1167262cf",
+      "lang": "markdown"
+    },
+    "docs/design/components/encoder.md": {
+      "size": 2541,
+      "hash": "c:cd2f6c0d59c8bf98",
+      "lang": "markdown"
+    },
+    "docs/design/components/imu-bmi270.md": {
+      "size": 1756,
+      "hash": "c:f62ab1cf7ea5108f",
+      "lang": "markdown"
+    },
+    "docs/design/components/mcu-stm32f407zg.md": {
+      "size": 2508,
+      "hash": "c:47b06111ce484704",
+      "lang": "markdown"
+    },
+    "docs/design/components/motor-ms42c.md": {
+      "size": 2217,
+      "hash": "c:f69ec124e9e6e61f",
+      "lang": "markdown"
+    },
+    "docs/design/components/power.md": {
+      "size": 2156,
+      "hash": "c:be3fa899632aff8f",
+      "lang": "markdown"
+    },
+    "docs/design/components/README.md": {
+      "size": 2091,
+      "hash": "c:79eec0cde8c92202",
+      "lang": "markdown"
+    },
+    "docs/design/ros-layered-options-latex/.gitignore": {
+      "size": 74,
+      "hash": "c:cbe5f8fde728f1f0",
+      "lang": ""
+    },
+    "docs/design/ros-layered-options-latex/main.tex": {
+      "size": 21367,
+      "hash": "c:54b658b294a8f66e",
+      "lang": ""
+    },
+    "docs/design/ros-layered-options-latex/README.md": {
+      "size": 1246,
+      "hash": "c:d3f12a28dbaeec65",
+      "lang": "markdown"
+    }
+  }
+}

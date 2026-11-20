@@ -1,0 +1,24 @@
+# 项目知识库的扫描边界：只留"当前版本"的源码与文档
+# 一行一条；不含 / 的按任意层级同名目录/文件匹配，含 / 的按前缀匹配
+
+# 体积大户，且不是"知识"
+docs/references
+history
+tmp
+_inbox
+mechanical
+hardware
+
+# 依赖与构建产物
+software/ble-panel/node_modules
+software/ble-panel/.venv
+software/ble-panel/__pycache__
+software/ble-panel/dist
+software/firmware/.pio
+software/firmware/.vscode
+
+# 原始录制数据（体积大、属于证据而非知识）
+docs/validation/recordings
+
+# 迁移残留
+_migration-staging-20261028
